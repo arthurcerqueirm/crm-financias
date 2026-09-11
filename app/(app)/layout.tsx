@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Navegacao from "@/components/Navegacao";
 import ConfiguracaoPendente from "@/components/ConfiguracaoPendente";
+import { supabaseConfigurado } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function LayoutApp({
@@ -8,10 +9,7 @@ export default async function LayoutApp({
 }: {
   children: React.ReactNode;
 }) {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  ) {
+  if (!supabaseConfigurado()) {
     return <ConfiguracaoPendente />;
   }
 

@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+export { supabaseConfigurado } from "@/lib/config";
+
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -23,13 +25,5 @@ export async function createClient() {
         },
       },
     },
-  );
-}
-
-/** Guarda para rotas de API: sem variáveis de ambiente não há o que consultar. */
-export function supabaseConfigurado(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   );
 }

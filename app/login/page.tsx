@@ -1,11 +1,9 @@
 import ConfiguracaoPendente from "@/components/ConfiguracaoPendente";
+import { supabaseConfigurado } from "@/lib/config";
 import FormularioLogin from "@/components/FormularioLogin";
 
 export default function PaginaLogin() {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  ) {
+  if (!supabaseConfigurado()) {
     return <ConfiguracaoPendente />;
   }
 
