@@ -11,6 +11,7 @@ type Analise = {
   ignoradas: number;
   duplicadas: number;
   usouIA: boolean;
+  pdfLidoPorIA: boolean;
   avisoIA: string | null;
   arquivo: string;
 };
@@ -187,7 +188,7 @@ export default function PainelImportacao({
           <input
             ref={inputArquivo}
             type="file"
-            accept=".csv,.ofx,.txt,text/csv,text/plain"
+            accept=".csv,.ofx,.pdf,.txt,text/csv,text/plain,application/pdf"
             className="hidden"
             onChange={(e) => {
               const arquivo = e.target.files?.[0];
@@ -204,7 +205,7 @@ export default function PainelImportacao({
                 Arraste o extrato aqui ou toque para escolher
               </p>
               <p className="mt-1 text-xs text-[var(--color-suave)]">
-                CSV ou OFX · até 6 MB
+                CSV, OFX ou PDF · até 4 MB
               </p>
             </>
           )}
@@ -237,6 +238,7 @@ export default function PainelImportacao({
                   ` · ${analise.duplicadas} já importada${analise.duplicadas === 1 ? "" : "s"}`}
                 {analise.ignoradas > 0 &&
                   ` · ${analise.ignoradas} linha${analise.ignoradas === 1 ? "" : "s"} sem data válida`}
+                {analise.pdfLidoPorIA && " · PDF lido pela IA"}
                 {analise.usouIA && " · categorizado com IA"}
               </p>
             </div>

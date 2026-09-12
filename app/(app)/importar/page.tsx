@@ -17,7 +17,7 @@ export default async function PaginaImportar() {
         Importar extrato
       </h1>
       <p className="mt-1 text-sm text-[var(--color-suave)]">
-        Exporte o extrato do seu banco em CSV ou OFX e solte o arquivo aqui. As
+        Exporte o extrato do seu banco em CSV, OFX ou PDF e solte o arquivo aqui. As
         transações já vêm categorizadas, e o que se repete não entra duas vezes.
       </p>
 

@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 import { createClient, supabaseConfigurado } from "@/lib/supabase/server";
-import { gerarHash, lerExtrato, normalizar } from "@/lib/extrato";
+import {
+  gerarHash,
+  lerData,
+  lerExtrato,
+  lerExtratoPDF,
+  normalizar,
+  type ResultadoLeitura,
+} from "@/lib/extrato";
+import { extrairLinhasPDF } from "@/lib/pdf";
 import { categorizarPorRegra } from "@/lib/categorizar";
-import { categorizarComIA, temChaveIA, type ItemParaCategorizar } from "@/lib/ia";
+import {
+  categorizarComIA,
+  lerPDFComIA,
+  temChaveIA,
+  type ItemParaCategorizar,
+} from "@/lib/ia";
 import type { Categoria, LinhaExtrato } from "@/lib/tipos";
 
 export const maxDuration = 300;
@@ -39,21 +52,77 @@ export async function POST(request: Request) {
   if (!(arquivo instanceof File) || arquivo.size === 0) {
     return NextResponse.json({ erro: "Envie um arquivo de extrato." }, { status: 400 });
   }
-  if (arquivo.size > 6 * 1024 * 1024) {
+  // A Vercel recusa corpos acima de ~4,5 MB antes da requisição chegar aqui.
+  if (arquivo.size > 4 * 1024 * 1024) {
     return NextResponse.json(
-      { erro: "Arquivo muito grande (máximo 6 MB). Tente exportar um período menor." },
+      { erro: "Arquivo muito grande (máximo 4 MB). Tente exportar um período menor." },
       { status: 400 },
     );
   }
 
-  let leitura;
-  try {
-    leitura = lerExtrato(decodificar(await arquivo.arrayBuffer()), arquivo.name);
-  } catch (erro) {
-    return NextResponse.json(
-      { erro: erro instanceof Error ? erro.message : "Não consegui ler o arquivo." },
-      { status: 400 },
-    );
+  const bytes = await arquivo.arrayBuffer();
+  const assinatura = new TextDecoder().decode(bytes.slice(0, 5));
+  const ehPDF = /\.pdf$/i.test(arquivo.name) || assinatura.startsWith("%PDF");
+
+  let leitura: ResultadoLeitura;
+  let pdfLidoPorIA = false;
+
+  if (ehPDF) {
+    try {
+      leitura = lerExtratoPDF(await extrairLinhasPDF(new Uint8Array(bytes)));
+    } catch (erroTexto) {
+      // PDF digitalizado ou layout fora do padrão: sobra pedir para o modelo ler.
+      if (!temChaveIA()) {
+        return NextResponse.json(
+          {
+            erro:
+              (erroTexto instanceof Error ? erroTexto.message : "Não consegui ler o PDF.") +
+              " Configure ANTHROPIC_API_KEY para que a IA tente ler o documento.",
+          },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const extraidas = await lerPDFComIA(Buffer.from(bytes).toString("base64"));
+        const validas = extraidas
+          .map((t) => ({
+            data: lerData(t.data),
+            descricao: t.descricao?.trim() || "Sem descrição",
+            valor: Number(t.valor),
+          }))
+          .filter(
+            (t): t is { data: string; descricao: string; valor: number } =>
+              t.data !== null && Number.isFinite(t.valor) && t.valor !== 0,
+          );
+
+        if (validas.length === 0) {
+          throw new Error("A IA não encontrou lançamentos neste PDF.");
+        }
+
+        leitura = { linhas: validas, ignoradas: 0, formato: "pdf" };
+        pdfLidoPorIA = true;
+      } catch (erroIA) {
+        return NextResponse.json(
+          {
+            erro:
+              erroIA instanceof Error
+                ? erroIA.message
+                : "Não consegui ler os lançamentos deste PDF.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+  } else {
+    try {
+      leitura = lerExtrato(decodificar(bytes), arquivo.name);
+    } catch (erro) {
+      return NextResponse.json(
+        { erro: erro instanceof Error ? erro.message : "Não consegui ler o arquivo." },
+        { status: 400 },
+      );
+    }
   }
 
   const { data: categoriasBrutas } = await supabase.from("categorias").select("*");
@@ -155,6 +224,7 @@ export async function POST(request: Request) {
     ignoradas: leitura.ignoradas,
     duplicadas: linhas.filter((l) => l.duplicada).length,
     usouIA,
+    pdfLidoPorIA,
     avisoIA,
     arquivo: arquivo.name,
   });

@@ -178,3 +178,71 @@ export async function analisarGastos(dados: DadosAnalise): Promise<AnaliseIA> {
   }
   return analise;
 }
+
+// ------------------------------------------------------------------
+// Leitura de PDF que a extração de texto não deu conta
+// ------------------------------------------------------------------
+
+const EsquemaExtratoPDF = z.object({
+  transacoes: z.array(
+    z.object({
+      data: z.string().describe("Data do lançamento no formato AAAA-MM-DD"),
+      descricao: z.string().describe("Descrição do lançamento como aparece no extrato"),
+      valor: z
+        .number()
+        .describe("Valor do lançamento: negativo para saídas, positivo para entradas"),
+    }),
+  ),
+});
+
+/**
+ * Último recurso para PDFs que a leitura de texto não interpreta — extratos
+ * digitalizados ou com layout fora do padrão. O modelo lê o PDF direto.
+ */
+export async function lerPDFComIA(
+  pdfBase64: string,
+): Promise<{ data: string; descricao: string; valor: number }[]> {
+  const anthropic = cliente();
+
+  const resposta = await anthropic.messages.parse({
+    model: MODELO,
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    output_config: {
+      effort: "medium",
+      format: zodOutputFormat(EsquemaExtratoPDF),
+    },
+    system:
+      "Você extrai lançamentos de extratos bancários brasileiros em PDF.\n\n" +
+      "Regras:\n" +
+      "- Retorne um item por lançamento, na ordem em que aparecem.\n" +
+      "- Saídas (débitos, pagamentos, compras) têm valor negativo; entradas positivas.\n" +
+      "- Ignore linhas de saldo (saldo anterior, saldo do dia, saldo final) e " +
+      "totais: não são lançamentos.\n" +
+      "- Quando a linha traz valor e saldo acumulado, use o valor do lançamento, " +
+      "nunca o saldo.\n" +
+      "- Se a data vier só como dia/mês, use o ano do período indicado no extrato.\n" +
+      "- Não invente lançamentos: extraia apenas o que está no documento.",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: pdfBase64,
+            },
+          },
+          {
+            type: "text",
+            text: "Extraia todos os lançamentos deste extrato.",
+          },
+        ],
+      },
+    ],
+  });
+
+  return resposta.parsed_output?.transacoes ?? [];
+}

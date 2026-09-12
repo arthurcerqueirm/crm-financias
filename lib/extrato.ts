@@ -15,7 +15,7 @@ export type LinhaBruta = {
 export type ResultadoLeitura = {
   linhas: LinhaBruta[];
   ignoradas: number;
-  formato: "csv" | "ofx";
+  formato: "csv" | "ofx" | "pdf";
 };
 
 // ------------------------------------------------------------------
@@ -419,4 +419,108 @@ export function gerarHash(
     h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
   }
   return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
+}
+
+// ------------------------------------------------------------------
+// PDF
+// ------------------------------------------------------------------
+
+/** Linhas que são cabeçalho, rodapé ou saldo — nunca lançamentos. */
+const LINHAS_IGNORADAS =
+  /saldo (anterior|do dia|final|em conta|disponivel|atual)|^s *a *l *d *o|total (geral|do periodo)|extrato (de )?conta|lancamentos futuros|pagina \d|^periodo|^agencia|^conta\b|^cliente|^nome|^cpf|^data\b.*(lancamento|historico|descricao)/i;
+
+const MOEDA = /-?\(?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}\s*\)?-?/g;
+
+/**
+ * Descobre o ano do extrato. Muitos bancos — o Itaú entre eles — imprimem
+ * só dia e mês nos lançamentos, e o ano aparece uma única vez no cabeçalho.
+ */
+function descobrirAno(linhas: string[]): number {
+  const contagem = new Map<number, number>();
+
+  for (const linha of linhas) {
+    for (const achado of linha.matchAll(/\b\d{1,2}[/-]\d{1,2}[/-](\d{4})\b/g)) {
+      const ano = Number(achado[1]);
+      if (ano >= 1990 && ano <= 2200) {
+        contagem.set(ano, (contagem.get(ano) ?? 0) + 1);
+      }
+    }
+  }
+
+  if (contagem.size === 0) return new Date().getFullYear();
+  return [...contagem.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+/**
+ * Interpreta linhas de texto já reconstruídas a partir de um PDF.
+ *
+ * Formato esperado, que é o da maioria dos extratos brasileiros:
+ *   data | descrição | valor [| saldo]
+ * Quando há dois valores na linha, o primeiro é o lançamento e o segundo é o
+ * saldo acumulado — que precisa ser descartado, senão viraria transação.
+ */
+export function lerExtratoPDF(linhas: string[]): ResultadoLeitura {
+  const ano = descobrirAno(linhas);
+  const resultado: LinhaBruta[] = [];
+  let ignoradas = 0;
+
+  for (const linha of linhas) {
+    const limpa = linha.trim();
+    if (!limpa || LINHAS_IGNORADAS.test(limpa)) continue;
+
+    const inicio = limpa.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/);
+    if (!inicio) {
+      ignoradas++;
+      continue;
+    }
+
+    const [, dia, mes, anoNaLinha] = inicio;
+    let anoFinal = ano;
+    if (anoNaLinha) {
+      anoFinal =
+        anoNaLinha.length === 2
+          ? Number(anoNaLinha) > 70
+            ? 1900 + Number(anoNaLinha)
+            : 2000 + Number(anoNaLinha)
+          : Number(anoNaLinha);
+    }
+
+    const data = lerData(
+      `${dia.padStart(2, "0")}/${mes.padStart(2, "0")}/${anoFinal}`,
+    );
+    if (!data) {
+      ignoradas++;
+      continue;
+    }
+
+    const resto = limpa.slice(inicio[0].length);
+    const valores = resto.match(MOEDA);
+    if (!valores || valores.length === 0) {
+      ignoradas++;
+      continue;
+    }
+
+    const valor = lerValor(valores[0]);
+    if (valor === null || valor === 0) {
+      ignoradas++;
+      continue;
+    }
+
+    // A descrição é o que sobra antes do primeiro valor monetário.
+    const posicaoValor = resto.indexOf(valores[0]);
+    const descricao =
+      resto.slice(0, posicaoValor).replace(/\s+/g, " ").trim() ||
+      "Sem descrição";
+
+    resultado.push({ data, descricao, valor });
+  }
+
+  if (resultado.length === 0) {
+    throw new Error(
+      "Não encontrei lançamentos neste PDF. Se o extrato for digitalizado " +
+        "(imagem), o texto não pode ser lido automaticamente.",
+    );
+  }
+
+  return { linhas: resultado, ignoradas, formato: "pdf" };
 }
