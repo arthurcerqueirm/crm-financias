@@ -31,7 +31,7 @@ export default async function PaginaAnalise({
       .select("*")
       .eq("periodo_inicio", inicio)
       .order("created_at", { ascending: false })
-      .limit(1),
+      .limit(20),
   ]);
 
   const lista = (transacoes ?? []) as TransacaoComCategoria[];
@@ -74,7 +74,7 @@ export default async function PaginaAnalise({
         <div className="lg:col-span-2">
           <PainelAnalise
             mes={mes}
-            insightInicial={((insights ?? [])[0] as Insight) ?? null}
+            historicoInicial={(insights ?? []) as Insight[]}
             temTransacoes={doMes.length > 0}
           />
         </div>
@@ -86,7 +86,6 @@ export default async function PaginaAnalise({
               <GraficoTendencia
                 dados={serie.map((s) => ({ mes: s.mes, valor: s.saldo }))}
                 rotulo="Sobrou"
-                cor="#4a9eff"
               />
             </div>
           </div>

@@ -117,23 +117,20 @@ export async function POST(request: Request) {
 
     const { data: salvo, error } = await supabase
       .from("insights")
-      // Upsert: só existe um insight por usuário/mês (constraint no banco).
-      // "Analisar de novo" substitui o anterior em vez de empilhar registros
-      // que nunca mais seriam lidos.
-      .upsert(
-        {
-          user_id: user.id,
-          periodo_inicio: inicio,
-          periodo_fim: fim,
-          resumo: analise.resumo,
-          dados: {
-            destaques: analise.destaques,
-            alertas: analise.alertas,
-            economias: analise.economias,
-          },
+      // Um registro novo por análise, não upsert: "Analisar de novo" fica no
+      // histórico do mês em vez de apagar a análise anterior — a pessoa pode
+      // querer comparar o que a IA disse antes com o que diz agora.
+      .insert({
+        user_id: user.id,
+        periodo_inicio: inicio,
+        periodo_fim: fim,
+        resumo: analise.resumo,
+        dados: {
+          destaques: analise.destaques,
+          alertas: analise.alertas,
+          economias: analise.economias,
         },
-        { onConflict: "user_id,periodo_inicio" },
-      )
+      })
       .select("*")
       .single();
 

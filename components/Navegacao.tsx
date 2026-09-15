@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Modal from "@/components/Modal";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import AlternadorTema from "@/components/AlternadorTema";
 import { useConfirmacao } from "@/lib/useConfirmacao";
 
 // Ordem usada na barra lateral do desktop (cabe tudo, sem sacrifício).
@@ -17,6 +18,7 @@ const ITENS = [
   { href: "/analise", rotulo: "Análise IA", icone: "✦" },
   { href: "/categorias", rotulo: "Categorias", icone: "◈" },
   { href: "/contas", rotulo: "Contas", icone: "▣" },
+  { href: "/perfil", rotulo: "Perfil", icone: "☺" },
 ];
 
 // No celular só cabem 4 no rodapé sem espremer — o resto vai para "Mais".
@@ -50,13 +52,16 @@ export default function Navegacao({ email }: { email: string }) {
     <>
       {/* Desktop: barra lateral fixa */}
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col border-r border-[var(--color-borda)] bg-[var(--color-painel)] p-4 lg:flex">
-        <div className="mb-8 px-2 pt-2">
-          <p className="text-lg font-bold tracking-tight">
-            Minhas <span className="text-[var(--color-verde)]">Finanças</span>
-          </p>
-          <p className="mt-0.5 truncate text-xs text-[var(--color-suave)]">
-            {email}
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-2 px-2 pt-2">
+          <div className="min-w-0">
+            <p className="text-lg font-bold tracking-tight">
+              Minhas <span className="text-[var(--color-verde)]">Finanças</span>
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--color-suave)]">
+              {email}
+            </p>
+          </div>
+          <AlternadorTema className="shrink-0 rounded-lg px-2 py-1.5 text-base text-[var(--color-suave)] transition hover:bg-[var(--color-painel-alto)] hover:text-[var(--color-texto)]" />
         </div>
 
         <nav aria-label="Navegação principal" className="flex flex-1 flex-col gap-1">
@@ -95,12 +100,15 @@ export default function Navegacao({ email }: { email: string }) {
         <p className="font-bold tracking-tight">
           Minhas <span className="text-[var(--color-verde)]">Finanças</span>
         </p>
-        <button
-          onClick={sair}
-          className="rounded px-2 py-1.5 text-xs font-medium text-[var(--color-suave)]"
-        >
-          Sair
-        </button>
+        <span className="flex items-center gap-1">
+          <AlternadorTema className="rounded-lg px-2 py-1.5 text-base text-[var(--color-suave)]" />
+          <button
+            onClick={sair}
+            className="rounded px-2 py-1.5 text-xs font-medium text-[var(--color-suave)]"
+          >
+            Sair
+          </button>
+        </span>
       </header>
 
       <nav

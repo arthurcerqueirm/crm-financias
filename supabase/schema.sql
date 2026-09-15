@@ -270,27 +270,13 @@ create index if not exists patrimonio_user_nome_idx on public.patrimonio (user_i
 -- ============================================================
 -- AJUSTES DE INTEGRIDADE (insights e transferências)
 -- ============================================================
--- Só o insight mais recente de cada mês é lido (ver app/api/analise);
--- sem essa restrição, clicar em "Analisar de novo" empilhava um registro
--- novo por clique, e os antigos ficavam mortos na tabela para sempre.
---
--- Quem já usou "Analisar de novo" antes desta migração pode ter mais de
--- um insight para o mesmo mês — a limpeza abaixo roda sempre (é barata e
--- idempotente) e garante que a constraint consiga ser criada mesmo num
--- banco que já tem dados.
-delete from public.insights a
-using public.insights b
-where a.user_id = b.user_id
-  and a.periodo_inicio = b.periodo_inicio
-  and (a.created_at, a.id) < (b.created_at, b.id);
-
-do $$
-begin
-  alter table public.insights
-    add constraint insights_um_por_periodo unique (user_id, periodo_inicio);
-exception
-  when duplicate_object then null;
-end $$;
+-- Versões anteriores deste arquivo limitavam a um insight por mês (upsert
+-- substituindo o anterior em "Analisar de novo"). A tela de Análise agora
+-- guarda o histórico — várias análises do mesmo mês convivem, e a pessoa
+-- escolhe qual ver. Em um banco que já rodou aquela versão, isto desfaz a
+-- constraint; num banco novo, o "if exists" torna o comando inofensivo.
+alter table public.insights
+  drop constraint if exists insights_um_por_periodo;
 
 -- Uma transferência move dinheiro de uma conta para outra; conta_id sozinho
 -- só registrava um dos dois lados. Nome explícito na FK para o PostgREST

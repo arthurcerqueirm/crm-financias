@@ -1,21 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { dataBR, moeda, mesLongo } from "@/lib/formato";
 import type { Insight } from "@/lib/tipos";
 
 export default function PainelAnalise({
   mes,
-  insightInicial,
+  historicoInicial,
   temTransacoes,
 }: {
   mes: string;
-  insightInicial: Insight | null;
+  /** Análises já feitas para este mês, da mais recente para a mais antiga. */
+  historicoInicial: Insight[];
   temTransacoes: boolean;
 }) {
-  const [insight, setInsight] = useState<Insight | null>(insightInicial);
+  const [historico, setHistorico] = useState(historicoInicial);
+  const [selecionadoId, setSelecionadoId] = useState(historicoInicial[0]?.id ?? null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  // Trocar de mês na tela troca também o histórico exibido.
+  useEffect(() => {
+    setHistorico(historicoInicial);
+    setSelecionadoId(historicoInicial[0]?.id ?? null);
+  }, [historicoInicial]);
+
+  const insight = historico.find((i) => i.id === selecionadoId) ?? null;
 
   async function analisar() {
     setCarregando(true);
@@ -27,8 +37,13 @@ export default function PainelAnalise({
         body: JSON.stringify({ mes }),
       });
       const json = await resposta.json();
-      if (!resposta.ok) setErro(json.erro ?? "Não consegui gerar a análise.");
-      else setInsight(json.insight as Insight);
+      if (!resposta.ok) {
+        setErro(json.erro ?? "Não consegui gerar a análise.");
+      } else {
+        const nova = json.insight as Insight;
+        setHistorico((atual) => [nova, ...atual]);
+        setSelecionadoId(nova.id);
+      }
     } catch {
       setErro("Falha de conexão ao gerar a análise.");
     } finally {
@@ -41,26 +56,49 @@ export default function PainelAnalise({
 
   return (
     <div className="space-y-4">
-      <div className="painel flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="font-semibold">{mesLongo(mes)}</p>
-          <p className="text-xs text-[var(--color-suave)]">
-            {insight
-              ? `Última análise em ${dataBR(insight.created_at)}`
-              : "Ainda sem análise para este mês"}
-          </p>
+      <div className="painel space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold">{mesLongo(mes)}</p>
+            <p className="text-xs text-[var(--color-suave)]">
+              {historico.length === 0
+                ? "Ainda sem análise para este mês"
+                : `${historico.length} análise${historico.length === 1 ? "" : "s"} neste mês`}
+            </p>
+          </div>
+          <button
+            onClick={analisar}
+            disabled={carregando || !temTransacoes}
+            className="botao"
+          >
+            {carregando
+              ? "Analisando..."
+              : historico.length > 0
+                ? "Analisar de novo"
+                : "Analisar este mês"}
+          </button>
         </div>
-        <button
-          onClick={analisar}
-          disabled={carregando || !temTransacoes}
-          className="botao"
-        >
-          {carregando
-            ? "Analisando..."
-            : insight
-              ? "Analisar de novo"
-              : "Analisar este mês"}
-        </button>
+
+        {historico.length > 1 && (
+          <div>
+            <label className="rotulo" htmlFor="historico-analises">
+              Ver análise de
+            </label>
+            <select
+              id="historico-analises"
+              className="campo"
+              value={selecionadoId ?? ""}
+              onChange={(e) => setSelecionadoId(e.target.value)}
+            >
+              {historico.map((i, indice) => (
+                <option key={i.id} value={i.id}>
+                  {dataBR(i.created_at)}
+                  {indice === 0 ? " (mais recente)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {!temTransacoes && (

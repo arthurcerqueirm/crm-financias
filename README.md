@@ -22,7 +22,8 @@ patrimônio. Feito para rodar na Vercel com banco no Supabase.
   (`PAG*IFD1234 SAO PAULO` vira `iFood`) — com limite diário de uso por
   usuário, para uma conta não gastar sua chave da Anthropic à toa.
 - **Análise com IA** — resumo do mês, alertas de gastos fora do padrão e
-  sugestões de economia com valor estimado.
+  sugestões de economia com valor estimado. Pedir de novo não apaga a análise
+  anterior: fica um histórico por mês, com um seletor para comparar.
 - **Patrimônio** — registro mensal de contas, investimentos e dívidas.
 - **Contas** — cada banco, cartão ou carteira, com saldo atual calculado
   automaticamente (saldo inicial + tudo que entrou e saiu).
@@ -31,6 +32,11 @@ patrimônio. Feito para rodar na Vercel com banco no Supabase.
   receita nem despesa.
 - **Exportar CSV** — baixa as transações a qualquer momento — tudo ou só o que
   está filtrado na tela (mês, categoria, tipo, busca).
+- **Perfil** — trocar a senha e, se um dia quiser, apagar a conta e todos os
+  dados de vez (pede a chave `SUPABASE_SERVICE_ROLE_KEY`, opcional — sem ela
+  o resto do app funciona normalmente, só esse botão fica indisponível).
+- **Tema claro/escuro** — segue o sistema por padrão; o ícone ☀/☾/◐ na
+  navegação alterna entre claro, escuro e automático, e lembra a escolha.
 
 Tudo responsivo: barra lateral no computador, navegação inferior no celular.
 Excluir uma transação, categoria, conta ou registro de patrimônio nunca pede
@@ -67,12 +73,17 @@ fecham com Esc, prendem o foco e devolvem o foco a quem abriu.
    | `NEXT_PUBLIC_SUPABASE_URL` | a Project URL do Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | a chave anon public |
    | `ANTHROPIC_API_KEY` | sua chave do [console.anthropic.com](https://console.anthropic.com) (opcional) |
+   | `SUPABASE_SERVICE_ROLE_KEY` | a chave *service_role*, na mesma tela do Supabase (opcional) |
 
 3. Faça o deploy e acesse a URL. Crie sua conta na tela de login.
 
 Sem `ANTHROPIC_API_KEY` o app funciona normalmente — só a categorização por IA
 e a página de análise ficam indisponíveis; a categorização por palavras-chave
-continua valendo.
+continua valendo. Sem `SUPABASE_SERVICE_ROLE_KEY`, tudo funciona normalmente
+também — só o botão "Excluir minha conta" em Perfil fica indisponível (com um
+aviso explicando o motivo, não um erro confuso). Essa chave ignora o RLS do
+banco, então nunca a exponha com o prefixo `NEXT_PUBLIC_` nem a use em nada
+além da rota que apaga a própria conta.
 
 O `vercel.json` fixa as funções na região `gru1` (São Paulo) — se o seu banco
 do Supabase estiver noutra região, vale trocar para a região mais próxima
@@ -120,14 +131,16 @@ via `.github/workflows/ci.yml`.
 
 ```
 app/
-  (app)/            painel, transações, importar, patrimônio, contas, análise, categorias
+  (app)/            painel, transações, importar, patrimônio, contas, análise, categorias, perfil
   api/
     analise/        gera os insights do mês com IA
     importar/       analisar (lê e categoriza) e salvar (grava no banco)
     exportar/       CSV de todas as transações
+    conta/excluir/  apaga a conta do usuário logado (precisa de SUPABASE_SERVICE_ROLE_KEY)
   login/
   error.tsx         boundary de erro do app autenticado e do login
   global-error.tsx  boundary de erro do layout raiz
+  manifest.ts       manifesto de Web App (ícone e cor ao instalar no celular)
 components/         gráficos, formulários e navegação
 lib/
   extrato.ts        leitura de CSV/OFX/PDF, datas e valores em formato brasileiro
@@ -137,7 +150,8 @@ lib/
   limiteIA.ts        limite diário de uso de IA por usuário
   agregacoes.ts     somas por mês, por categoria e evolução do patrimônio
   formato.ts        moeda, datas em pt-BR (fuso de Brasília fixo) e utilitários
-  supabase/         clientes de browser, servidor e middleware de sessão
+  useTemaEscuro.ts  tema atual (claro/escuro), para os gráficos escolherem cor
+  supabase/         clientes de browser, servidor, admin (service role) e middleware
   *.test.ts         testes (node --test), rodam com `npm test`
 supabase/schema.sql tabelas, índices, RLS, categorias padrão e limite de IA
 scripts/            resolvedor de "@/..." para os testes rodarem fora do Next
@@ -149,7 +163,12 @@ scripts/            resolvedor de "@/..." para os testes rodarem fora do Next
   ninguém lê os dados de outra conta.
 - A chave anon do Supabase é pública por natureza (vai no navegador) — quem
   protege os dados é o RLS, por isso não remova as políticas do schema.
-- A `ANTHROPIC_API_KEY` só é usada no servidor e nunca chega ao navegador.
+- A `ANTHROPIC_API_KEY` e a `SUPABASE_SERVICE_ROLE_KEY` só são usadas no
+  servidor e nunca chegam ao navegador. A service role ignora o RLS — só é
+  usada na rota que apaga a própria conta (`app/api/conta/excluir`), depois
+  de confirmar quem está logado pela sessão normal.
+- Excluir a conta em Perfil exige digitar o e-mail da conta antes do botão
+  destravar — sem isso, um clique errado apagaria tudo sem chance de voltar.
 - Cada conta tem um limite diário de análises, categorizações por IA e PDFs
   lidos por IA — o cadastro aberto do Supabase não vira uma torneira aberta
   na sua fatura da Anthropic.
