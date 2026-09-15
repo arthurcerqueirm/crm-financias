@@ -7,20 +7,30 @@ patrimônio. Feito para rodar na Vercel com banco no Supabase.
 ## O que tem
 
 - **Painel** — receitas, despesas, quanto sobrou e patrimônio líquido do mês,
-  com comparação automática contra o mês anterior.
+  com comparação automática contra o mês anterior. Todos os gráficos
+  respeitam o mês selecionado.
 - **Gráficos** — receitas x despesas em 12 meses, rosca de gastos por categoria,
   evolução do patrimônio, quanto sobra por mês e tendência da maior categoria.
-- **Importação de extrato** — arrasta um CSV ou OFX e pronto. Entende os
+  Carregam sob demanda, sem pesar no primeiro acesso.
+- **Importação de extrato** — arrasta um CSV, OFX ou PDF e pronto. Entende os
   formatos de Nubank, Itaú, Bradesco, BB, Inter, C6 e Santander (separador,
   cabeçalho e codificação são detectados automaticamente), e não importa a
-  mesma transação duas vezes.
+  mesma transação duas vezes. Fica um histórico de importações com opção de
+  desfazer.
 - **Categorização automática** — primeiro por palavras-chave (de graça e
   instantâneo); o que sobrar vai para a IA, que também limpa a descrição
-  (`PAG*IFD1234 SAO PAULO` vira `iFood`).
+  (`PAG*IFD1234 SAO PAULO` vira `iFood`) — com limite diário de uso por
+  usuário, para uma conta não gastar sua chave da Anthropic à toa.
 - **Análise com IA** — resumo do mês, alertas de gastos fora do padrão e
   sugestões de economia com valor estimado.
 - **Patrimônio** — registro mensal de contas, investimentos e dívidas.
+- **Contas** — cada banco, cartão ou carteira, com saldo atual calculado
+  automaticamente (saldo inicial + tudo que entrou e saiu).
 - **Categorias e orçamentos** — cor, ícone, palavras-chave e teto mensal.
+- **Transferências entre contas** — registra origem e destino, não conta como
+  receita nem despesa.
+- **Exportar CSV** — baixa todas as transações a qualquer momento, para um
+  backup fora do app.
 
 Tudo responsivo: barra lateral no computador, navegação inferior no celular.
 
@@ -32,12 +42,16 @@ Tudo responsivo: barra lateral no computador, navegação inferior no celular.
 2. Abra **SQL Editor**, cole o conteúdo de [`supabase/schema.sql`](supabase/schema.sql)
    e execute. Isso cria as tabelas, liga o RLS (cada usuário só vê os próprios
    dados) e deixa 18 categorias brasileiras prontas para quem se cadastrar.
+   O arquivo é seguro para rodar de novo a qualquer momento — inclusive num
+   banco que já tem dados, para pegar atualizações de uma versão nova do app.
 3. Em **Project Settings → API**, copie a **Project URL** e a chave
    **anon public**.
 
-> Se você preferir que ninguém mais consiga criar conta no seu app, vá em
-> **Authentication → Providers → Email** e desligue *Enable signups* depois de
-> criar a sua.
+> O cadastro é aberto por padrão no Supabase. Se você preferir que ninguém
+> mais consiga criar conta no seu app, vá em **Authentication → Providers →
+> Email** e desligue *Enable signups* depois de criar a sua. Mesmo com
+> cadastro aberto, cada conta tem um limite diário de uso da IA (ver
+> `lib/limiteIA.ts`), para o gasto máximo ficar sob controle.
 
 ### 2. Deploy (Vercel)
 
@@ -56,6 +70,10 @@ Sem `ANTHROPIC_API_KEY` o app funciona normalmente — só a categorização por
 e a página de análise ficam indisponíveis; a categorização por palavras-chave
 continua valendo.
 
+O `vercel.json` fixa as funções na região `gru1` (São Paulo) — se o seu banco
+do Supabase estiver noutra região, vale trocar para a região mais próxima
+dele, senão toda consulta cruza o Atlântico.
+
 ### 3. Rodando local
 
 ```bash
@@ -64,39 +82,61 @@ cp .env.example .env.local   # preencha as variáveis
 npm run dev
 ```
 
+### 4. Testes
+
+```bash
+npm test
+```
+
+Cobre o parser de extrato (formatos de banco, datas, valores em formato
+brasileiro), as agregações usadas nos gráficos e a categorização por regra —
+sem depender do Supabase nem da Anthropic. Roda automaticamente a cada push
+via `.github/workflows/ci.yml`.
+
 ## Como usar
 
-1. **Importe um extrato.** No seu banco, exporte o extrato em CSV ou OFX
+1. **Importe um extrato.** No seu banco, exporte o extrato em CSV, OFX ou PDF
    (no Nubank: *Conta → Extrato → exportar*). Solte o arquivo em **Importar**.
 2. **Revise a prévia.** Dá para trocar a categoria de qualquer linha e
    desmarcar o que não quiser antes de confirmar. O que já foi importado antes
-   vem marcado e bloqueado.
+   vem marcado e bloqueado. Se importar o arquivo errado, dá para desfazer
+   depois no histórico, logo abaixo do upload.
 3. **Ajuste as palavras-chave.** Em **Categorias**, adicione os termos que
    aparecem no seu extrato. Na próxima importação eles são reconhecidos sozinhos,
    sem custo de IA.
-4. **Registre o patrimônio.** Uma vez por mês, anote em **Patrimônio** o saldo de
+4. **Cadastre suas contas.** Em **Contas** (dentro de "Mais" no celular),
+   adicione cada banco, cartão ou carteira, com o saldo que já tinha antes de
+   usar o app.
+5. **Registre o patrimônio.** Uma vez por mês, anote em **Patrimônio** o saldo de
    cada conta, investimento e dívida. Use sempre o mesmo nome para o gráfico
    ligar os pontos.
-5. **Peça a análise.** Em **Análise IA**, escolha o mês e clique em analisar.
+6. **Peça a análise.** Em **Análise IA**, escolha o mês e clique em analisar.
 
 ## Estrutura
 
 ```
 app/
-  (app)/            painel, transações, importar, patrimônio, análise, categorias
+  (app)/            painel, transações, importar, patrimônio, contas, análise, categorias
   api/
     analise/        gera os insights do mês com IA
     importar/       analisar (lê e categoriza) e salvar (grava no banco)
+    exportar/       CSV de todas as transações
   login/
+  error.tsx         boundary de erro do app autenticado e do login
+  global-error.tsx  boundary de erro do layout raiz
 components/         gráficos, formulários e navegação
 lib/
-  extrato.ts        leitura de CSV/OFX, datas e valores em formato brasileiro
+  extrato.ts        leitura de CSV/OFX/PDF, datas e valores em formato brasileiro
+  pdf.ts            extração de texto de PDF (pdf.js)
   categorizar.ts    categorização por palavra-chave
-  ia.ts             chamadas ao Claude (categorização e análise)
+  ia.ts             chamadas ao Claude (categorização, análise, leitura de PDF)
+  limiteIA.ts        limite diário de uso de IA por usuário
   agregacoes.ts     somas por mês, por categoria e evolução do patrimônio
-  formato.ts        moeda e datas em pt-BR
+  formato.ts        moeda, datas em pt-BR (fuso de Brasília fixo) e utilitários
   supabase/         clientes de browser, servidor e middleware de sessão
-supabase/schema.sql tabelas, índices, RLS e categorias padrão
+  *.test.ts         testes (node --test), rodam com `npm test`
+supabase/schema.sql tabelas, índices, RLS, categorias padrão e limite de IA
+scripts/            resolvedor de "@/..." para os testes rodarem fora do Next
 ```
 
 ## Segurança
@@ -106,4 +146,10 @@ supabase/schema.sql tabelas, índices, RLS e categorias padrão
 - A chave anon do Supabase é pública por natureza (vai no navegador) — quem
   protege os dados é o RLS, por isso não remova as políticas do schema.
 - A `ANTHROPIC_API_KEY` só é usada no servidor e nunca chega ao navegador.
+- Cada conta tem um limite diário de análises, categorizações por IA e PDFs
+  lidos por IA — o cadastro aberto do Supabase não vira uma torneira aberta
+  na sua fatura da Anthropic.
+- As rotas de importação validam no servidor o que recebem do navegador:
+  formato de data, valor positivo, e que categoria/conta pertencem mesmo a
+  quem está logado.
 - Nunca comite `.env.local` nem a senha do banco; o `.gitignore` já cobre isso.

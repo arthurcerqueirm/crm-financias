@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { GraficoPatrimonio } from "@/components/Graficos";
+import { GraficoPatrimonio } from "@/components/GraficosDinamicos";
 import GerenciadorPatrimonio from "@/components/GerenciadorPatrimonio";
 import { CartaoKPI } from "@/components/Ui";
 import SeletorMes from "@/components/SeletorMes";

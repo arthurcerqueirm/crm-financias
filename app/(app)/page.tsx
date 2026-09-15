@@ -5,7 +5,7 @@ import {
   GraficoPatrimonio,
   GraficoReceitaDespesa,
   GraficoSaldoMensal,
-} from "@/components/Graficos";
+} from "@/components/GraficosDinamicos";
 import { CartaoKPI, BarraCategoria, Vazio } from "@/components/Ui";
 import SeletorMes from "@/components/SeletorMes";
 import {

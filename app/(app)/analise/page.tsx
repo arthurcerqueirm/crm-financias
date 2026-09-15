@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import PainelAnalise from "@/components/PainelAnalise";
 import SeletorMes from "@/components/SeletorMes";
-import { GraficoTendencia } from "@/components/Graficos";
+import { GraficoTendencia } from "@/components/GraficosDinamicos";
 import { limitesDoMes, mesAtual, ultimosMeses } from "@/lib/formato";
 import { mesDa, porCategoria, serieMensal, somar } from "@/lib/agregacoes";
 import type { Insight, TransacaoComCategoria } from "@/lib/tipos";

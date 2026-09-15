@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { dataBR, hojeISO, lerValorPositivo, moeda } from "@/lib/formato";
@@ -34,6 +34,7 @@ export default function GerenciadorTransacoes({
   const [busca, setBusca] = useState(filtros.busca);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const primeiraRenderizacao = useRef(true);
 
   function aplicarFiltro(chave: string, valor: string) {
     const novos = new URLSearchParams(params.toString());
@@ -41,6 +42,18 @@ export default function GerenciadorTransacoes({
     else novos.delete(chave);
     router.push(`${pathname}?${novos.toString()}`);
   }
+
+  // Busca ao vivo, com uma pausa curta para não disparar uma consulta a
+  // cada tecla — o Enter no formulário abaixo ainda funciona na hora.
+  useEffect(() => {
+    if (primeiraRenderizacao.current) {
+      primeiraRenderizacao.current = false;
+      return;
+    }
+    const temporizador = setTimeout(() => aplicarFiltro("busca", busca), 400);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca]);
 
   async function excluir(id: string) {
     if (!confirm("Excluir esta transação?")) return;
@@ -166,16 +179,27 @@ export default function GerenciadorTransacoes({
                 >
                   <span
                     className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
-                    style={{ backgroundColor: `${t.categorias?.cor ?? "#94a3b8"}22` }}
+                    style={{
+                      backgroundColor:
+                        t.tipo === "transferencia"
+                          ? "#4a9eff22"
+                          : `${t.categorias?.cor ?? "#94a3b8"}22`,
+                    }}
                   >
-                    {t.categorias?.icone ?? "❔"}
+                    {t.tipo === "transferencia" ? "⇄" : (t.categorias?.icone ?? "❔")}
                   </span>
 
                   <div className="min-w-0 flex-1 basis-40">
                     <p className="truncate text-sm font-medium">{t.descricao}</p>
                     <p className="truncate text-xs text-[var(--color-suave)]">
                       {dataBR(t.data)}
-                      {t.contas?.nome ? ` · ${t.contas.nome}` : ""}
+                      {t.tipo === "transferencia"
+                        ? t.contas?.nome && t.contas_destino?.nome
+                          ? ` · ${t.contas.nome} → ${t.contas_destino.nome}`
+                          : ""
+                        : t.contas?.nome
+                          ? ` · ${t.contas.nome}`
+                          : ""}
                       {t.categorizado_por === "ia" ? " · IA" : ""}
                       {t.observacao ? ` · ${t.observacao}` : ""}
                     </p>
@@ -279,6 +303,9 @@ function ModalTransacao({
   );
   const [categoriaId, setCategoriaId] = useState(transacao?.categoria_id ?? "");
   const [contaId, setContaId] = useState(transacao?.conta_id ?? contas[0]?.id ?? "");
+  const [contaDestinoId, setContaDestinoId] = useState(
+    transacao?.conta_destino_id ?? "",
+  );
   const [observacao, setObservacao] = useState(transacao?.observacao ?? "");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -296,6 +323,16 @@ function ModalTransacao({
       );
       return;
     }
+    if (tipo === "transferencia") {
+      if (!contaId || !contaDestinoId) {
+        setErro("Escolha a conta de origem e a de destino da transferência.");
+        return;
+      }
+      if (contaId === contaDestinoId) {
+        setErro("Origem e destino não podem ser a mesma conta.");
+        return;
+      }
+    }
 
     setSalvando(true);
     setErro(null);
@@ -308,6 +345,7 @@ function ModalTransacao({
       tipo,
       categoria_id: tipo === "transferencia" ? null : categoriaId || null,
       conta_id: contaId || null,
+      conta_destino_id: tipo === "transferencia" ? contaDestinoId || null : null,
       observacao: observacao.trim() || null,
       categorizado_por: "manual" as const,
     };
@@ -449,23 +487,50 @@ function ModalTransacao({
           </div>
         )}
 
-        <div>
-          <label className="rotulo" htmlFor="conta">
-            Conta
-          </label>
-          <select
-            id="conta"
-            className="campo"
-            value={contaId}
-            onChange={(e) => setContaId(e.target.value)}
-          >
-            <option value="">Sem conta</option>
-            {contas.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+        <div className={tipo === "transferencia" ? "grid grid-cols-2 gap-3" : undefined}>
+          <div>
+            <label className="rotulo" htmlFor="conta">
+              {tipo === "transferencia" ? "De" : "Conta"}
+            </label>
+            <select
+              id="conta"
+              className="campo"
+              value={contaId}
+              onChange={(e) => setContaId(e.target.value)}
+              required={tipo === "transferencia"}
+            >
+              <option value="">Sem conta</option>
+              {contas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {tipo === "transferencia" && (
+            <div>
+              <label className="rotulo" htmlFor="conta-destino">
+                Para
+              </label>
+              <select
+                id="conta-destino"
+                className="campo"
+                value={contaDestinoId}
+                onChange={(e) => setContaDestinoId(e.target.value)}
+                required
+              >
+                <option value="">Escolha a conta</option>
+                {contas
+                  .filter((c) => c.id !== contaId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div>

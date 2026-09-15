@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import GerenciadorTransacoes from "@/components/GerenciadorTransacoes";
-import { limitesDoMes, mesAtual, moeda } from "@/lib/formato";
+import { escaparLike, limitesDoMes, mesAtual, moeda } from "@/lib/formato";
 import { somar } from "@/lib/agregacoes";
 import SeletorMes from "@/components/SeletorMes";
 import type { Categoria, Conta, TransacaoComCategoria } from "@/lib/tipos";
@@ -20,13 +20,17 @@ export default async function PaginaTransacoes({
 
   let consulta = supabase
     .from("transacoes")
-    .select("*, categorias(id,nome,cor,icone), contas(id,nome)")
+    .select(
+      "*, categorias(id,nome,cor,icone), contas!transacoes_conta_id_fkey(id,nome), contas_destino:contas!transacoes_conta_destino_id_fkey(id,nome)",
+    )
     .gte("data", inicio)
     .lte("data", fim);
 
   if (params.categoria) consulta = consulta.eq("categoria_id", params.categoria);
   if (params.tipo) consulta = consulta.eq("tipo", params.tipo);
-  if (params.busca) consulta = consulta.ilike("descricao", `%${params.busca}%`);
+  if (params.busca) {
+    consulta = consulta.ilike("descricao", `%${escaparLike(params.busca)}%`);
+  }
 
   const [{ data: transacoes }, { data: categorias }, { data: contas }] =
     await Promise.all([
@@ -52,7 +56,16 @@ export default async function PaginaTransacoes({
             <span className="text-[var(--color-vermelho)]">−{moeda(despesas)}</span>
           </p>
         </div>
-        <SeletorMes mes={mes} maximo={mesAtual()} />
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/exportar/transacoes"
+            className="botao-secundario"
+            title="Baixa todas as suas transações em CSV, de qualquer período"
+          >
+            Exportar CSV
+          </a>
+          <SeletorMes mes={mes} maximo={mesAtual()} />
+        </div>
       </div>
 
       <div className="mt-5">
