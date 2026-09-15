@@ -18,6 +18,8 @@ jobs:
 
       - run: npm ci
 
+      - run: npm run lint
+
       # Roda os testes de unidade (parser de extrato, formatação, agregações)
       # antes do build — mais rápido de falhar quando alguém quebra a lógica
       # de leitura de CSV/OFX/PDF.

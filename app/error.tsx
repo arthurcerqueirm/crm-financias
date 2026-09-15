@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 
 /**
  * Boundary de erro do App Router — cobre qualquer exceção não tratada nas
@@ -29,9 +30,9 @@ export default function ErroApp({
       </p>
 
       <div className="mt-6 flex gap-2">
-        <a href="/" className="botao-secundario">
+        <Link href="/" className="botao-secundario">
           Voltar ao painel
-        </a>
+        </Link>
         <button onClick={() => reset()} className="botao">
           Tentar de novo
         </button>
