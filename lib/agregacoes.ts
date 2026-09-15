@@ -109,8 +109,9 @@ export function porCategoria(
 export function evolucaoPatrimonio(
   registros: RegistroPatrimonio[],
   quantidadeMeses: number,
+  ate?: string,
 ): { mes: string; ativos: number; passivos: number; liquido: number }[] {
-  const meses = ultimosMeses(quantidadeMeses);
+  const meses = ultimosMeses(quantidadeMeses, ate);
   const ordenados = [...registros].sort((a, b) => a.data.localeCompare(b.data));
 
   return meses.map((mes) => {

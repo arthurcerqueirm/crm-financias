@@ -19,13 +19,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ erro: "Você precisa estar logado." }, { status: 401 });
   }
 
-  const corpo = (await request.json()) as {
+  const corpo = (await request.json().catch(() => null)) as {
     linhas: LinhaExtrato[];
     conta_id: string | null;
     arquivo: string;
-  };
+    totalLinhas?: number;
+    totalDuplicadas?: number;
+  } | null;
 
-  const linhas = (corpo.linhas ?? []).filter((l) => !l.duplicada);
+  if (!corpo || !Array.isArray(corpo.linhas)) {
+    return NextResponse.json({ erro: "Requisição inválida." }, { status: 400 });
+  }
+
+  // Teto defensivo: esta rota é chamada direto pelo navegador com um corpo
+  // JSON — nada impede alguém de montar uma requisição maior que qualquer
+  // extrato real produziria.
+  if (corpo.linhas.length > 20000) {
+    return NextResponse.json(
+      { erro: "Muitas linhas de uma vez. Importe em partes menores." },
+      { status: 400 },
+    );
+  }
+
+  const linhas = corpo.linhas.filter((l) => !l.duplicada);
   if (linhas.length === 0) {
     return NextResponse.json(
       { erro: "Nenhuma transação nova para importar." },
@@ -33,15 +49,28 @@ export async function POST(request: Request) {
     );
   }
 
+  // O cliente já sabe esses dois números com precisão (vieram da resposta
+  // de /analisar); usa-los aqui em vez de recalcular a partir da lista já
+  // filtrada evita o bug de "duplicadas sempre zero" — a lista que chega
+  // não carrega mais essa informação.
+  const totalLinhas = Math.max(
+    Number.isFinite(corpo.totalLinhas) ? Number(corpo.totalLinhas) : 0,
+    corpo.linhas.length,
+  );
+  const totalDuplicadas = Math.max(
+    0,
+    Number.isFinite(corpo.totalDuplicadas) ? Number(corpo.totalDuplicadas) : 0,
+  );
+
   const { data: importacao, error: erroImportacao } = await supabase
     .from("importacoes")
     .insert({
       user_id: user.id,
       arquivo_nome: corpo.arquivo || "extrato",
       conta_id: corpo.conta_id,
-      total_linhas: corpo.linhas.length,
-      total_importado: linhas.length,
-      total_duplicado: corpo.linhas.length - linhas.length,
+      total_linhas: totalLinhas,
+      total_importado: 0,
+      total_duplicado: totalDuplicadas,
     })
     .select("id")
     .single();
@@ -75,8 +104,18 @@ export async function POST(request: Request) {
     .select("id");
 
   if (error) {
+    // A importação já existe como registro; sem isso o histórico mostraria
+    // "0 de X" para sempre numa falha parcial. Ainda assim relata o erro.
     return NextResponse.json({ erro: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ importadas: inseridas?.length ?? 0 });
+  const importadas = inseridas?.length ?? 0;
+
+  // Número real de linhas que entraram — só se sabe depois do upsert.
+  await supabase
+    .from("importacoes")
+    .update({ total_importado: importadas })
+    .eq("id", importacao.id);
+
+  return NextResponse.json({ importadas });
 }

@@ -115,14 +115,34 @@ export function mesLongo(anoMes: string): string {
   return `${nomes[Number(mes) - 1]} de ${ano}`;
 }
 
+/**
+ * Desloca "agora" para o horário de Brasília e devolve os componentes de
+ * data via os getters de UTC — um truque deliberado, não um bug.
+ *
+ * As funções serverless da Vercel rodam em UTC, e o middleware roda num
+ * runtime edge que pode nem respeitar a variável TZ do processo. Se
+ * mesAtual() usasse new Date().getMonth() puro, entre 21h e meia-noite no
+ * Brasil o servidor já estaria no dia seguinte em UTC — o painel abriria no
+ * mês errado bem na hora em que mais gente confere o extrato do dia.
+ * Subtrair o offset fixo e ler pelos getters de UTC dá o mesmo resultado em
+ * qualquer runtime, sem depender de configuração de fuso do host. O Brasil
+ * não observa horário de verão desde 2019, então o offset fixo -03:00 é
+ * seguro o ano inteiro.
+ */
+const OFFSET_BRASILIA_MS = 3 * 60 * 60 * 1000;
+
+function agoraBrasilia(): Date {
+  return new Date(Date.now() - OFFSET_BRASILIA_MS);
+}
+
 export function mesAtual(): string {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const hoje = agoraBrasilia();
+  return `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export function hojeISO(): string {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  const hoje = agoraBrasilia();
+  return `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}-${String(hoje.getUTCDate()).padStart(2, "0")}`;
 }
 
 /** Primeiro e último dia do mês "2026-03" em ISO. */

@@ -56,7 +56,7 @@ export default async function Painel({
         <div className="mt-6">
           <Vazio
             titulo="Ainda não há nada por aqui"
-            descricao="Importe o extrato do seu banco em CSV ou OFX e o painel se monta sozinho — categorias, gráficos e análise."
+            descricao="Importe o extrato do seu banco em CSV, OFX ou PDF e o painel se monta sozinho — categorias, gráficos e análise."
             acao={
               <Link href="/importar" className="botao">
                 Importar meu extrato
@@ -82,7 +82,7 @@ export default async function Painel({
 
   const serie = serieMensal(transacoes, 12, mes);
   const categoriasGasto = porCategoria(doMes, "despesa");
-  const evolucao = evolucaoPatrimonio(patrimonio, 12);
+  const evolucao = evolucaoPatrimonio(patrimonio, 12, mes);
   const patrimonioAtual = evolucao.at(-1)?.liquido ?? 0;
   const patrimonioAnterior = evolucao.at(-2)?.liquido ?? 0;
 

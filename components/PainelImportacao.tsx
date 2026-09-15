@@ -82,6 +82,8 @@ export default function PainelImportacao({
           linhas: paraSalvar,
           conta_id: contaId || null,
           arquivo: analise.arquivo,
+          totalLinhas: analise.linhas.length,
+          totalDuplicadas: analise.duplicadas,
         }),
       });
       const json = await resposta.json();

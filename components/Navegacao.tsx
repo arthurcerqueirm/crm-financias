@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+// Ordem usada na barra lateral do desktop (cabe tudo, sem sacrifício).
 const ITENS = [
   { href: "/", rotulo: "Painel", icone: "◎" },
   { href: "/transacoes", rotulo: "Transações", icone: "≡" },
@@ -11,7 +13,13 @@ const ITENS = [
   { href: "/patrimonio", rotulo: "Patrimônio", icone: "▲" },
   { href: "/analise", rotulo: "Análise IA", icone: "✦" },
   { href: "/categorias", rotulo: "Categorias", icone: "◈" },
+  { href: "/contas", rotulo: "Contas", icone: "🏦" },
 ];
+
+// No celular só cabem 4 no rodapé sem espremer — o resto vai para "Mais".
+const PRINCIPAIS = ["/", "/transacoes", "/importar", "/analise"];
+const ITENS_PRINCIPAIS = ITENS.filter((i) => PRINCIPAIS.includes(i.href));
+const ITENS_SECUNDARIOS = ITENS.filter((i) => !PRINCIPAIS.includes(i.href));
 
 function estaAtivo(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -20,12 +28,17 @@ function estaAtivo(pathname: string, href: string): boolean {
 export default function Navegacao({ email }: { email: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [maisAberto, setMaisAberto] = useState(false);
 
   async function sair() {
     await createClient().auth.signOut();
     router.push("/login");
     router.refresh();
   }
+
+  const algumSecundarioAtivo = ITENS_SECUNDARIOS.some((i) =>
+    estaAtivo(pathname, i.href),
+  );
 
   return (
     <>
@@ -81,17 +94,15 @@ export default function Navegacao({ email }: { email: string }) {
         </button>
       </header>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-6 border-t border-[var(--color-borda)] bg-[var(--color-painel)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        {ITENS.map((item) => {
+      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-[var(--color-borda)] bg-[var(--color-painel)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+        {ITENS_PRINCIPAIS.map((item) => {
           const ativo = estaAtivo(pathname, item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition ${
-                ativo
-                  ? "text-[var(--color-verde)]"
-                  : "text-[var(--color-suave)]"
+                ativo ? "text-[var(--color-verde)]" : "text-[var(--color-suave)]"
               }`}
             >
               <span className="text-base leading-none">{item.icone}</span>
@@ -99,7 +110,52 @@ export default function Navegacao({ email }: { email: string }) {
             </Link>
           );
         })}
+        <button
+          onClick={() => setMaisAberto(true)}
+          className={`flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition ${
+            algumSecundarioAtivo
+              ? "text-[var(--color-verde)]"
+              : "text-[var(--color-suave)]"
+          }`}
+        >
+          <span className="text-base leading-none">⋯</span>
+          Mais
+        </button>
       </nav>
+
+      {maisAberto && (
+        <div
+          className="fixed inset-0 z-30 flex items-end bg-black/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setMaisAberto(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[var(--color-borda)]" />
+            <div className="grid grid-cols-3 gap-2">
+              {ITENS_SECUNDARIOS.map((item) => {
+                const ativo = estaAtivo(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMaisAberto(false)}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-4 text-xs font-medium transition ${
+                      ativo
+                        ? "bg-[var(--color-verde)]/12 text-[var(--color-verde)]"
+                        : "text-[var(--color-suave)] hover:bg-[var(--color-painel-alto)]"
+                    }`}
+                  >
+                    <span className="text-xl leading-none">{item.icone}</span>
+                    {item.rotulo}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
