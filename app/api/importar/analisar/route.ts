@@ -16,6 +16,10 @@ import {
   temChaveIA,
   type ItemParaCategorizar,
 } from "@/lib/ia";
+import {
+  LIMITE_ITENS_IA_POR_IMPORTACAO,
+  registrarUso,
+} from "@/lib/limiteIA";
 import type { Categoria, LinhaExtrato } from "@/lib/tipos";
 
 export const maxDuration = 300;
@@ -83,6 +87,11 @@ export async function POST(request: Request) {
         );
       }
 
+      const usoPdf = await registrarUso(supabase, { pdf: 1 });
+      if (!usoPdf.ok) {
+        return NextResponse.json({ erro: usoPdf.motivo }, { status: 429 });
+      }
+
       try {
         const extraidas = await lerPDFComIA(Buffer.from(bytes).toString("base64"));
         const validas = extraidas
@@ -142,6 +151,7 @@ export async function POST(request: Request) {
     return {
       data: linha.data,
       descricao: linha.descricao,
+      descricao_original: null,
       valor: Math.abs(linha.valor),
       tipo: ehReceita ? "receita" : "despesa",
       categoria_id: categoria?.id ?? null,
@@ -186,31 +196,49 @@ export async function POST(request: Request) {
     });
 
     if (pendentes.length > 0) {
-      try {
-        const sugestoes = await categorizarComIA(
-          pendentes,
-          categorias.filter((c) => c.tipo === "despesa").map((c) => c.nome),
-          categorias.filter((c) => c.tipo === "receita").map((c) => c.nome),
-        );
+      // Teto por requisição: uma importação de anos de extrato não pode
+      // virar uma corrente sem fim de chamadas de IA numa função só.
+      const excedentes = pendentes.length - LIMITE_ITENS_IA_POR_IMPORTACAO;
+      const paraCategorizar = pendentes.slice(0, LIMITE_ITENS_IA_POR_IMPORTACAO);
 
-        for (const [indice, sugestao] of sugestoes) {
-          const linha = linhas[indice];
-          const categoria = porNome.get(normalizar(sugestao.categoria));
-          if (!linha || !categoria) continue;
-          linha.categoria_id = categoria.id;
-          linha.categoria_nome = categoria.nome;
-          linha.categorizado_por = "ia";
-          if (sugestao.comerciante.trim()) {
-            linha.descricao = sugestao.comerciante.trim();
+      const usoItens = await registrarUso(supabase, {
+        itens: paraCategorizar.length,
+      });
+
+      if (!usoItens.ok) {
+        avisoIA = usoItens.motivo;
+      } else {
+        try {
+          const sugestoes = await categorizarComIA(
+            paraCategorizar,
+            categorias.filter((c) => c.tipo === "despesa").map((c) => c.nome),
+            categorias.filter((c) => c.tipo === "receita").map((c) => c.nome),
+          );
+
+          for (const [indice, sugestao] of sugestoes) {
+            const linha = linhas[indice];
+            const categoria = porNome.get(normalizar(sugestao.categoria));
+            if (!linha || !categoria) continue;
+            linha.categoria_id = categoria.id;
+            linha.categoria_nome = categoria.nome;
+            linha.categorizado_por = "ia";
+            if (sugestao.comerciante.trim()) {
+              linha.descricao_original = linha.descricao;
+              linha.descricao = sugestao.comerciante.trim();
+            }
           }
+          usouIA = true;
+
+          if (excedentes > 0) {
+            avisoIA = `A IA categorizou as primeiras ${LIMITE_ITENS_IA_POR_IMPORTACAO} transações sem categoria. As outras ${excedentes} ficaram sem categoria — ajuste na mão ou importe em partes menores.`;
+          }
+        } catch (erro) {
+          // Categorização é um extra: sem IA o usuário ainda importa e ajusta na mão.
+          avisoIA =
+            erro instanceof Error
+              ? `A IA não conseguiu categorizar (${erro.message}). Você pode ajustar manualmente.`
+              : "A IA não conseguiu categorizar. Você pode ajustar manualmente.";
         }
-        usouIA = true;
-      } catch (erro) {
-        // Categorização é um extra: sem IA o usuário ainda importa e ajusta na mão.
-        avisoIA =
-          erro instanceof Error
-            ? `A IA não conseguiu categorizar (${erro.message}). Você pode ajustar manualmente.`
-            : "A IA não conseguiu categorizar. Você pode ajustar manualmente.";
       }
     }
   } else if (usarIA && !temChaveIA()) {

@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     importacao_id: importacao.id,
     data: linha.data,
     descricao: linha.descricao,
+    descricao_original: linha.descricao_original ?? null,
     valor: linha.valor,
     tipo: linha.tipo,
     origem: "importacao" as const,

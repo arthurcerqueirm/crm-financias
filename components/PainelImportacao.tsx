@@ -297,6 +297,11 @@ export default function PainelImportacao({
                       </td>
                       <td className="max-w-[14rem] px-2 py-2">
                         <span className="block truncate">{linha.descricao}</span>
+                        {linha.descricao_original && (
+                          <span className="block truncate text-[11px] text-[var(--color-suave)]">
+                            era: {linha.descricao_original}
+                          </span>
+                        )}
                         {linha.duplicada && (
                           <span className="text-[11px] text-[var(--color-ambar)]">
                             já importada

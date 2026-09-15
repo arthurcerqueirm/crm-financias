@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { dataBR, hojeISO, moeda } from "@/lib/formato";
-import { Vazio } from "@/components/Ui";
+import { dataBR, hojeISO, lerValorPositivo, moeda } from "@/lib/formato";
+import { PreviaValor, Vazio } from "@/components/Ui";
 import type { Conta, RegistroPatrimonio } from "@/lib/tipos";
 
 export default function GerenciadorPatrimonio({
@@ -29,9 +29,11 @@ export default function GerenciadorPatrimonio({
 
   async function salvar(evento: React.FormEvent) {
     evento.preventDefault();
-    const numero = Number(valor.replace(/\./g, "").replace(",", "."));
-    if (!Number.isFinite(numero)) {
-      setErro("Informe um valor numérico.");
+    const numero = lerValorPositivo(valor);
+    if (numero === null) {
+      setErro(
+        `Não entendi "${valor}" como um valor. Use vírgula para os centavos, ex.: 12.500,00.`,
+      );
       return;
     }
     if (!nome.trim()) {
@@ -52,7 +54,7 @@ export default function GerenciadorPatrimonio({
         user_id: user!.id,
         nome: nome.trim(),
         tipo,
-        valor: Math.abs(numero),
+        valor: numero,
         data,
         conta_id: contas.find((c) => c.nome === nome.trim())?.id ?? null,
       },
@@ -131,6 +133,7 @@ export default function GerenciadorPatrimonio({
               placeholder="12.500,00"
               required
             />
+            <PreviaValor texto={valor} />
           </div>
           <div>
             <label className="rotulo" htmlFor="data-ativo">

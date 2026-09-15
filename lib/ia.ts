@@ -48,12 +48,24 @@ export async function categorizarComIA(
   if (itens.length === 0) return mapa;
 
   const anthropic = cliente();
+  const sistema = [
+    {
+      type: "text" as const,
+      text:
+        "Você classifica transações de extratos bancários brasileiros.\n\n" +
+        `Categorias de DESPESA: ${categoriasDespesa.join(", ")}\n` +
+        `Categorias de RECEITA: ${categoriasReceita.join(", ")}\n\n` +
+        "Regras:\n" +
+        "- Use exatamente um dos nomes de categoria acima, respeitando o tipo da transação.\n" +
+        "- Se não houver encaixe claro, use 'Outros' (despesa) ou 'Outras Receitas' (receita).\n" +
+        "- Em 'comerciante', limpe a descrição: remova códigos, datas, número de parcela " +
+        "e prefixos de maquininha. Ex.: 'PAG*IFD1234 SAO PAULO' vira 'iFood'.\n" +
+        "- Responda um item para cada transação enviada, mantendo o índice original.",
+      cache_control: { type: "ephemeral" as const },
+    },
+  ];
 
-  // Lotes pequenos mantêm a resposta previsível e o custo sob controle.
-  const TAMANHO_LOTE = 60;
-  for (let i = 0; i < itens.length; i += TAMANHO_LOTE) {
-    const lote = itens.slice(i, i + TAMANHO_LOTE);
-
+  async function categorizarLote(lote: ItemParaCategorizar[]) {
     const resposta = await anthropic.messages.parse({
       model: MODELO,
       max_tokens: 16000,
@@ -62,22 +74,7 @@ export async function categorizarComIA(
         effort: "low",
         format: zodOutputFormat(EsquemaCategorizacao),
       },
-      system: [
-        {
-          type: "text",
-          text:
-            "Você classifica transações de extratos bancários brasileiros.\n\n" +
-            `Categorias de DESPESA: ${categoriasDespesa.join(", ")}\n` +
-            `Categorias de RECEITA: ${categoriasReceita.join(", ")}\n\n` +
-            "Regras:\n" +
-            "- Use exatamente um dos nomes de categoria acima, respeitando o tipo da transação.\n" +
-            "- Se não houver encaixe claro, use 'Outros' (despesa) ou 'Outras Receitas' (receita).\n" +
-            "- Em 'comerciante', limpe a descrição: remova códigos, datas, número de parcela " +
-            "e prefixos de maquininha. Ex.: 'PAG*IFD1234 SAO PAULO' vira 'iFood'.\n" +
-            "- Responda um item para cada transação enviada, mantendo o índice original.",
-          cache_control: { type: "ephemeral" },
-        },
-      ],
+      system: sistema,
       messages: [
         {
           role: "user",
@@ -97,6 +94,21 @@ export async function categorizarComIA(
         comerciante: r.comerciante,
       });
     }
+  }
+
+  // Lotes pequenos mantêm a resposta previsível; rodar alguns em paralelo
+  // encurta o tempo total sem aumentar o custo (o preço é por token
+  // processado, não por chamada) — importante para não estourar o tempo
+  // máximo da função numa importação grande.
+  const TAMANHO_LOTE = 60;
+  const CONCORRENCIA = 3;
+  const lotes = [];
+  for (let i = 0; i < itens.length; i += TAMANHO_LOTE) {
+    lotes.push(itens.slice(i, i + TAMANHO_LOTE));
+  }
+
+  for (let i = 0; i < lotes.length; i += CONCORRENCIA) {
+    await Promise.all(lotes.slice(i, i + CONCORRENCIA).map(categorizarLote));
   }
 
   return mapa;

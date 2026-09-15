@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { dataBR, hojeISO, moeda } from "@/lib/formato";
-import { Vazio } from "@/components/Ui";
+import { dataBR, hojeISO, lerValorPositivo, moeda } from "@/lib/formato";
+import { PreviaValor, Vazio } from "@/components/Ui";
 import type {
   Categoria,
   Conta,
@@ -173,11 +173,20 @@ export default function GerenciadorTransacoes({
 
                   <div className="min-w-0 flex-1 basis-40">
                     <p className="truncate text-sm font-medium">{t.descricao}</p>
-                    <p className="text-xs text-[var(--color-suave)]">
+                    <p className="truncate text-xs text-[var(--color-suave)]">
                       {dataBR(t.data)}
                       {t.contas?.nome ? ` · ${t.contas.nome}` : ""}
                       {t.categorizado_por === "ia" ? " · IA" : ""}
+                      {t.observacao ? ` · ${t.observacao}` : ""}
                     </p>
+                    {t.descricao_original && (
+                      <p
+                        className="truncate text-[11px] text-[var(--color-suave)]/70"
+                        title={t.descricao_original}
+                      >
+                        era: {t.descricao_original}
+                      </p>
+                    )}
                   </div>
 
                   <select
@@ -270,6 +279,7 @@ function ModalTransacao({
   );
   const [categoriaId, setCategoriaId] = useState(transacao?.categoria_id ?? "");
   const [contaId, setContaId] = useState(transacao?.conta_id ?? contas[0]?.id ?? "");
+  const [observacao, setObservacao] = useState(transacao?.observacao ?? "");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -279,9 +289,11 @@ function ModalTransacao({
 
   async function enviar(evento: React.FormEvent) {
     evento.preventDefault();
-    const numero = Number(valor.replace(/\./g, "").replace(",", "."));
-    if (!Number.isFinite(numero) || numero <= 0) {
-      setErro("Informe um valor maior que zero.");
+    const numero = lerValorPositivo(valor);
+    if (numero === null) {
+      setErro(
+        `Não entendi "${valor}" como um valor. Use vírgula para os centavos, ex.: 149,90.`,
+      );
       return;
     }
 
@@ -296,6 +308,7 @@ function ModalTransacao({
       tipo,
       categoria_id: tipo === "transferencia" ? null : categoriaId || null,
       conta_id: contaId || null,
+      observacao: observacao.trim() || null,
       categorizado_por: "manual" as const,
     };
 
@@ -398,6 +411,7 @@ function ModalTransacao({
               placeholder="149,90"
               required
             />
+            <PreviaValor texto={valor} />
           </div>
           <div>
             <label className="rotulo" htmlFor="data">
@@ -452,6 +466,19 @@ function ModalTransacao({
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="rotulo" htmlFor="observacao">
+            Observação — opcional
+          </label>
+          <input
+            id="observacao"
+            className="campo"
+            value={observacao}
+            onChange={(e) => setObservacao(e.target.value)}
+            placeholder="parcela 2 de 3, dividido com..."
+          />
         </div>
 
         {erro && (

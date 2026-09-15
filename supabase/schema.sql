@@ -184,3 +184,62 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.criar_categorias_padrao();
+
+-- ============================================================
+-- USO DE IA — limite diário por usuário
+-- ============================================================
+-- Sem isso, qualquer conta criada (o cadastro é aberto por padrão no
+-- Supabase) pode chamar as rotas de IA sem limite e gastar a chave da
+-- Anthropic configurada no projeto. O contador é por linha (user_id, dia) e
+-- o incremento é atômico via a função abaixo — não dá para burlar com
+-- requisições em paralelo.
+create table if not exists public.uso_ia (
+  user_id             uuid not null references auth.users(id) on delete cascade,
+  dia                 date not null default (current_date),
+  analises             integer not null default 0,
+  itens_categorizados integer not null default 0,
+  paginas_pdf_lidas   integer not null default 0,
+  primary key (user_id, dia)
+);
+
+alter table public.uso_ia enable row level security;
+
+drop policy if exists "uso_ia_proprio" on public.uso_ia;
+create policy "uso_ia_proprio" on public.uso_ia
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+-- SECURITY DEFINER: incrementa e devolve o total do dia numa única operação
+-- atômica, para duas requisições simultâneas não conseguirem passar do limite.
+create or replace function public.registrar_uso_ia(
+  p_analises integer default 0,
+  p_itens integer default 0,
+  p_pdf integer default 0
+)
+returns table (analises integer, itens_categorizados integer, paginas_pdf_lidas integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user uuid := auth.uid();
+begin
+  if v_user is null then
+    raise exception 'not authenticated';
+  end if;
+
+  insert into public.uso_ia (user_id, dia, analises, itens_categorizados, paginas_pdf_lidas)
+  values (v_user, current_date, p_analises, p_itens, p_pdf)
+  on conflict (user_id, dia) do update
+    set analises = public.uso_ia.analises + excluded.analises,
+        itens_categorizados = public.uso_ia.itens_categorizados + excluded.itens_categorizados,
+        paginas_pdf_lidas = public.uso_ia.paginas_pdf_lidas + excluded.paginas_pdf_lidas
+  returning public.uso_ia.analises, public.uso_ia.itens_categorizados, public.uso_ia.paginas_pdf_lidas
+  into analises, itens_categorizados, paginas_pdf_lidas;
+
+  return next;
+end;
+$$;
+
+grant execute on function public.registrar_uso_ia(integer, integer, integer) to authenticated;

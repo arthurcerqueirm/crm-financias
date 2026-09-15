@@ -77,6 +77,8 @@ export type Insight = {
 export type LinhaExtrato = {
   data: string;
   descricao: string;
+  /** Texto original do banco, antes da IA limpar para um nome de comerciante. */
+  descricao_original: string | null;
   valor: number;
   tipo: TipoTransacao;
   categoria_id: string | null;

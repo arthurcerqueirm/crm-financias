@@ -30,55 +30,11 @@ export function normalizar(texto: string): string {
   return semAcento(texto).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-/**
- * Converte valores em formato brasileiro ou americano.
- * "1.234,56" -> 1234.56 | "-1,234.56" -> -1234.56 | "R$ 45,90" -> 45.9
- */
-export function lerValor(bruto: string): number | null {
-  if (!bruto) return null;
-
-  let texto = bruto.trim();
-  if (!texto) return null;
-
-  // Valor entre parênteses é negativo na contabilidade: (150,00)
-  let negativo = /^\(.*\)$/.test(texto);
-  if (negativo) texto = texto.slice(1, -1);
-
-  texto = texto.replace(/r\$/gi, "").replace(/\s/g, "");
-  if (texto.startsWith("-")) {
-    negativo = true;
-    texto = texto.slice(1);
-  } else if (texto.startsWith("+")) {
-    texto = texto.slice(1);
-  }
-
-  if (!/[\d]/.test(texto)) return null;
-
-  const ultimaVirgula = texto.lastIndexOf(",");
-  const ultimoPonto = texto.lastIndexOf(".");
-
-  if (ultimaVirgula > -1 && ultimoPonto > -1) {
-    // O separador decimal é o que vem por último.
-    if (ultimaVirgula > ultimoPonto) {
-      texto = texto.replace(/\./g, "").replace(",", ".");
-    } else {
-      texto = texto.replace(/,/g, "");
-    }
-  } else if (ultimaVirgula > -1) {
-    // Só vírgula: decimal se tiver 1-2 casas depois, senão é separador de milhar.
-    const casas = texto.length - ultimaVirgula - 1;
-    texto = casas <= 2 ? texto.replace(",", ".") : texto.replace(/,/g, "");
-  } else if (ultimoPonto > -1) {
-    const casas = texto.length - ultimoPonto - 1;
-    if (casas === 3 && /^\d{1,3}(\.\d{3})+$/.test(texto)) {
-      texto = texto.replace(/\./g, ""); // 1.234 = mil duzentos e trinta e quatro
-    }
-  }
-
-  const numero = Number(texto);
-  if (!Number.isFinite(numero)) return null;
-  return negativo ? -numero : numero;
-}
+// lerValor mora em lib/formato.ts — é a mesma lógica de desambiguação
+// usada nos formulários da interface, e um lançamento de extrato não deixa
+// de ser um valor em reais só porque veio de um arquivo.
+export { lerValor } from "@/lib/formato";
+import { lerValor } from "@/lib/formato";
 
 /** Converte data em ISO. Aceita DD/MM/AAAA, DD-MM-AA, AAAA-MM-DD, AAAAMMDD. */
 export function lerData(bruto: string): string | null {

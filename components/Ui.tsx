@@ -1,4 +1,4 @@
-import { moeda, percentual } from "@/lib/formato";
+import { lerValor, moeda, percentual } from "@/lib/formato";
 
 export function CartaoKPI({
   rotulo,
@@ -123,5 +123,29 @@ export function Vazio({
       </p>
       {acao && <div className="mt-5">{acao}</div>}
     </div>
+  );
+}
+
+/**
+ * Confirma em tempo real como um campo de valor digitado está sendo
+ * interpretado — a rede de proteção contra o clássico "digitei 89.90 e virou
+ * 8.990,00 sem eu perceber". Fica em silêncio com o campo vazio.
+ */
+export function PreviaValor({ texto }: { texto: string }) {
+  if (!texto.trim()) return null;
+
+  const numero = lerValor(texto);
+  if (numero === null || numero <= 0) {
+    return (
+      <p className="mt-1 text-xs text-[var(--color-vermelho)]">
+        Não entendi esse valor.
+      </p>
+    );
+  }
+
+  return (
+    <p className="mt-1 text-xs text-[var(--color-suave)]">
+      = <span className="text-[var(--color-verde)]">{moeda(numero)}</span>
+    </p>
   );
 }

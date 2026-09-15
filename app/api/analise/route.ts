@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, supabaseConfigurado } from "@/lib/supabase/server";
 import { analisarGastos, temChaveIA, type DadosAnalise } from "@/lib/ia";
+import { registrarUso } from "@/lib/limiteIA";
 import { detectarRecorrentes, porCategoria, somar, evolucaoPatrimonio } from "@/lib/agregacoes";
 import { limitesDoMes, mesAnterior, mesLongo } from "@/lib/formato";
 import type { RegistroPatrimonio, TransacaoComCategoria } from "@/lib/tipos";
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
       },
       { status: 400 },
     );
+  }
+
+  const uso = await registrarUso(supabase, { analises: 1 });
+  if (!uso.ok) {
+    return NextResponse.json({ erro: uso.motivo }, { status: 429 });
   }
 
   const { mes } = (await request.json()) as { mes: string };

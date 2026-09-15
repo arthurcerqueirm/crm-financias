@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { moeda } from "@/lib/formato";
+import { PreviaValor } from "@/components/Ui";
+import { lerValorPositivo, moeda } from "@/lib/formato";
 import type { Categoria, TipoCategoria } from "@/lib/tipos";
 
 const CORES = [
@@ -155,12 +156,12 @@ function ModalCategoria({
     setErro(null);
 
     const supabase = createClient();
-    const valorOrcamento = orcamento.trim()
-      ? Number(orcamento.replace(/\./g, "").replace(",", "."))
-      : null;
+    const valorOrcamento = orcamento.trim() ? lerValorPositivo(orcamento) : null;
 
-    if (valorOrcamento != null && !Number.isFinite(valorOrcamento)) {
-      setErro("Orçamento inválido.");
+    if (orcamento.trim() && valorOrcamento === null) {
+      setErro(
+        `Não entendi "${orcamento}" como um valor. Use vírgula para os centavos, ex.: 800,00.`,
+      );
       setSalvando(false);
       return;
     }
@@ -326,6 +327,7 @@ function ModalCategoria({
               onChange={(e) => setOrcamento(e.target.value)}
               placeholder="800,00"
             />
+            <PreviaValor texto={orcamento} />
           </div>
         )}
 
