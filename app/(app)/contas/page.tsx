@@ -1,8 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import GerenciadorContas from "@/components/GerenciadorContas";
 import type { Conta } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Contas · Minhas Finanças" };
 
 export default async function PaginaContas() {
   const supabase = await createClient();

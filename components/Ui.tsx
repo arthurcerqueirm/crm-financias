@@ -6,12 +6,20 @@ export function CartaoKPI({
   variacao: variacaoPct,
   cor = "texto",
   legenda,
+  bomQuandoSobe = true,
 }: {
   rotulo: string;
   valor: number;
   variacao?: number | null;
   cor?: "texto" | "verde" | "vermelho" | "azul";
   legenda?: string;
+  /**
+   * Se a variação positiva é uma boa notícia (receita, patrimônio) ou uma má
+   * notícia (despesa). Sem isto, "gastei 20% a mais que mês passado" saía
+   * pintado de verde — a mesma cor de "boa notícia" — só porque o número
+   * subiu.
+   */
+  bomQuandoSobe?: boolean;
 }) {
   const cores = {
     texto: "text-[var(--color-texto)]",
@@ -20,11 +28,14 @@ export function CartaoKPI({
     azul: "text-[var(--color-azul)]",
   };
 
+  const variacaoBoa =
+    variacaoPct != null && (bomQuandoSobe ? variacaoPct >= 0 : variacaoPct <= 0);
+
   return (
     <div className="painel">
       <p className="text-xs font-medium text-[var(--color-suave)]">{rotulo}</p>
       <p
-        className={`mt-1.5 text-xl font-bold tabular-nums sm:text-2xl ${cores[cor]}`}
+        className={`mt-1.5 text-lg font-bold tabular-nums sm:text-xl lg:text-2xl ${cores[cor]}`}
       >
         {moeda(valor)}
       </p>
@@ -32,7 +43,7 @@ export function CartaoKPI({
         <p className="mt-1 text-xs text-[var(--color-suave)]">
           <span
             className={
-              variacaoPct >= 0
+              variacaoBoa
                 ? "text-[var(--color-verde)]"
                 : "text-[var(--color-vermelho)]"
             }
@@ -131,13 +142,21 @@ export function Vazio({
  * interpretado — a rede de proteção contra o clássico "digitei 89.90 e virou
  * 8.990,00 sem eu perceber". Fica em silêncio com o campo vazio.
  */
-export function PreviaValor({ texto }: { texto: string }) {
+export function PreviaValor({
+  texto,
+  permitirNegativo = false,
+}: {
+  texto: string;
+  /** Para campos como saldo inicial, onde negativo é um valor válido (cartão com fatura aberta, cheque especial). */
+  permitirNegativo?: boolean;
+}) {
   if (!texto.trim()) return null;
 
   const numero = lerValor(texto);
-  if (numero === null || numero <= 0) {
+  const invalido = numero === null || (!permitirNegativo && numero <= 0);
+  if (invalido) {
     return (
-      <p className="mt-1 text-xs text-[var(--color-vermelho)]">
+      <p className="mt-1 text-xs text-[var(--color-vermelho)]" role="alert">
         Não entendi esse valor.
       </p>
     );

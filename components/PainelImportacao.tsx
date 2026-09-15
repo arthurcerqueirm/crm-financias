@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { dataBR, moeda } from "@/lib/formato";
 import type { Categoria, Conta, LinhaExtrato } from "@/lib/tipos";
@@ -16,6 +17,27 @@ type Analise = {
   arquivo: string;
 };
 
+/** Barra de progresso indeterminada — mostra que algo está acontecendo em
+ * vez de deixar o texto estático parecendo travado durante os até 45s que a
+ * categorização por IA pode levar num extrato grande. */
+function BarraIndeterminada() {
+  return (
+    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-borda)]">
+      <div className="h-full w-1/3 animate-[progresso_1.4s_ease-in-out_infinite] rounded-full bg-[var(--color-verde)]" />
+      <style jsx>{`
+        @keyframes progresso {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(300%);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function PainelImportacao({
   contas,
   categorias,
@@ -30,11 +52,21 @@ export default function PainelImportacao({
   const [usarIA, setUsarIA] = useState(true);
   const [arrastando, setArrastando] = useState(false);
   const [carregando, setCarregando] = useState(false);
+  const [segundosCarregando, setSegundosCarregando] = useState(0);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [analise, setAnalise] = useState<Analise | null>(null);
   const [ignoradas, setIgnoradas] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!carregando) {
+      setSegundosCarregando(0);
+      return;
+    }
+    const intervalo = setInterval(() => setSegundosCarregando((s) => s + 1), 1000);
+    return () => clearInterval(intervalo);
+  }, [carregando]);
 
   async function enviar(arquivo: File) {
     setCarregando(true);
@@ -124,8 +156,30 @@ export default function PainelImportacao({
     setIgnoradas(novas);
   }
 
+  function alternarTodas() {
+    if (!analise) return;
+    const elegiveis = analise.linhas
+      .map((l, i) => (l.duplicada ? -1 : i))
+      .filter((i) => i >= 0);
+    const todasMarcadas = elegiveis.every((i) => !ignoradas.has(i));
+    if (todasMarcadas) {
+      // Todas estavam marcadas: desmarca todas.
+      setIgnoradas(new Set(elegiveis));
+    } else {
+      // Alguma estava desmarcada: marca todas para importar.
+      setIgnoradas(new Set());
+    }
+  }
+
   const selecionadas =
     analise?.linhas.filter((l, i) => !l.duplicada && !ignoradas.has(i)) ?? [];
+  const elegiveis = analise?.linhas.filter((l) => !l.duplicada).length ?? 0;
+  const totalEntrando = selecionadas
+    .filter((l) => l.tipo === "receita")
+    .reduce((s, l) => s + l.valor, 0);
+  const totalSaindo = selecionadas
+    .filter((l) => l.tipo === "despesa")
+    .reduce((s, l) => s + l.valor, 0);
 
   return (
     <div className="space-y-4">
@@ -168,6 +222,17 @@ export default function PainelImportacao({
           </div>
         </div>
 
+        {contas.length === 0 && (
+          <p className="rounded-xl border border-[var(--color-ambar)]/30 bg-[var(--color-ambar)]/10 px-3 py-2.5 text-sm text-[var(--color-ambar)]">
+            Você ainda não tem nenhuma conta cadastrada. Dá para importar mesmo
+            assim, mas vale{" "}
+            <Link href="/contas" className="underline">
+              criar sua primeira conta
+            </Link>{" "}
+            antes, para o saldo atual de cada banco aparecer certo.
+          </p>
+        )}
+
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -198,29 +263,47 @@ export default function PainelImportacao({
             }}
           />
           {carregando ? (
-            <p className="text-sm font-medium text-[var(--color-verde)]">
-              Lendo e categorizando...
-            </p>
+            <>
+              <p className="text-sm font-medium text-[var(--color-verde)]">
+                Lendo e categorizando...
+                {segundosCarregando >= 5 && ` (${segundosCarregando}s)`}
+              </p>
+              {segundosCarregando >= 5 && (
+                <p className="mt-1 text-xs text-[var(--color-suave)]">
+                  Extratos grandes com IA podem levar até 1 minuto.
+                </p>
+              )}
+              <BarraIndeterminada />
+            </>
           ) : (
             <>
               <p className="text-sm font-semibold">
                 Arraste o extrato aqui ou toque para escolher
               </p>
               <p className="mt-1 text-xs text-[var(--color-suave)]">
-                CSV, OFX ou PDF · até 4 MB
+                CSV, OFX, TXT ou PDF · até 4 MB
               </p>
             </>
           )}
         </div>
 
         {erro && (
-          <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+          <p
+            role="alert"
+            className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+          >
             {erro}
           </p>
         )}
         {sucesso && (
-          <p className="rounded-xl border border-[var(--color-verde)]/30 bg-[var(--color-verde)]/10 px-3 py-2.5 text-sm text-[var(--color-verde)]">
-            {sucesso}
+          <p
+            role="status"
+            className="rounded-xl border border-[var(--color-verde)]/30 bg-[var(--color-verde)]/10 px-3 py-2.5 text-sm text-[var(--color-verde)]"
+          >
+            {sucesso}{" "}
+            <Link href="/transacoes" className="underline">
+              Ver transações →
+            </Link>
           </p>
         )}
       </div>
@@ -243,6 +326,16 @@ export default function PainelImportacao({
                 {analise.pdfLidoPorIA && " · PDF lido pela IA"}
                 {analise.usouIA && " · categorizado com IA"}
               </p>
+              {selecionadas.length > 0 && (
+                <p className="mt-1 text-xs">
+                  <span className="text-[var(--color-verde)]">
+                    +{moeda(totalEntrando)}
+                  </span>{" "}
+                  <span className="text-[var(--color-vermelho)]">
+                    −{moeda(totalSaindo)}
+                  </span>
+                </p>
+              )}
             </div>
             <button
               onClick={confirmar}
@@ -259,11 +352,20 @@ export default function PainelImportacao({
             </p>
           )}
 
-          <div className="mt-4 max-h-[28rem] overflow-y-auto rounded-xl border border-[var(--color-borda)]">
-            <table className="w-full text-sm">
+          <div className="mt-4 max-h-[28rem] overflow-auto rounded-xl border border-[var(--color-borda)]">
+            <table className="w-full min-w-[640px] text-sm">
               <thead className="sticky top-0 bg-[var(--color-painel-alto)] text-left text-xs text-[var(--color-suave)]">
                 <tr>
-                  <th className="w-10 px-3 py-2.5"></th>
+                  <th className="w-10 px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={elegiveis > 0 && selecionadas.length === elegiveis}
+                      onChange={alternarTodas}
+                      disabled={elegiveis === 0}
+                      className="h-4 w-4 accent-[var(--color-verde)]"
+                      aria-label="Selecionar todas as linhas para importar"
+                    />
+                  </th>
                   <th className="px-2 py-2.5 font-medium">Data</th>
                   <th className="px-2 py-2.5 font-medium">Descrição</th>
                   <th className="px-2 py-2.5 font-medium">Categoria</th>
@@ -314,6 +416,7 @@ export default function PainelImportacao({
                         <select
                           value={linha.categoria_id ?? ""}
                           onChange={(e) => trocarCategoria(indice, e.target.value)}
+                          aria-label={`Categoria de ${linha.descricao}`}
                           className="w-full max-w-[11rem] rounded-lg border border-[var(--color-borda)] bg-[var(--color-fundo)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-verde)]"
                         >
                           <option value="">Sem categoria</option>

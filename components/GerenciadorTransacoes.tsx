@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { dataBR, hojeISO, lerValorPositivo, moeda } from "@/lib/formato";
 import { PreviaValor, Vazio } from "@/components/Ui";
+import Modal from "@/components/Modal";
+import { useListaComDesfazer } from "@/lib/useListaComDesfazer";
 import type {
   Categoria,
   Conta,
@@ -13,6 +15,10 @@ import type {
 } from "@/lib/tipos";
 
 type Filtros = { categoria: string; tipo: string; busca: string };
+
+function comparadorTransacoes(a: TransacaoComCategoria, b: TransacaoComCategoria) {
+  return b.data.localeCompare(a.data) || b.created_at.localeCompare(a.created_at);
+}
 
 export default function GerenciadorTransacoes({
   transacoes,
@@ -28,19 +34,31 @@ export default function GerenciadorTransacoes({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const [formularioAberto, setFormularioAberto] = useState(false);
   const [editando, setEditando] = useState<TransacaoComCategoria | null>(null);
   const [busca, setBusca] = useState(filtros.busca);
-  const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const [categoriaBulk, setCategoriaBulk] = useState("");
+  const [aplicandoBulk, setAplicandoBulk] = useState(false);
   const primeiraRenderizacao = useRef(true);
+
+  const { itens, setItens, excluir } = useListaComDesfazer<TransacaoComCategoria>(
+    transacoes,
+  );
 
   function aplicarFiltro(chave: string, valor: string) {
     const novos = new URLSearchParams(params.toString());
     if (valor) novos.set(chave, valor);
     else novos.delete(chave);
-    router.push(`${pathname}?${novos.toString()}`);
+    // replace, não push: trocar filtro não deveria empilhar histórico — o
+    // "voltar" do celular passava a rebobinar filtro por filtro em vez de
+    // sair da tela.
+    startTransition(() => {
+      router.replace(`${pathname}?${novos.toString()}`);
+    });
   }
 
   // Busca ao vivo, com uma pausa curta para não disparar uma consulta a
@@ -55,29 +73,97 @@ export default function GerenciadorTransacoes({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busca]);
 
-  async function excluir(id: string) {
-    if (!confirm("Excluir esta transação?")) return;
-    setOcupado(id);
-    setErro(null);
-    const { error } = await createClient().from("transacoes").delete().eq("id", id);
-    if (error) setErro(error.message);
-    else router.refresh();
-    setOcupado(null);
+  const filtrosAtivos = !!filtros.categoria || !!filtros.tipo || !!filtros.busca;
+
+  function limparFiltros() {
+    setBusca("");
+    startTransition(() => router.replace(pathname));
   }
 
-  async function trocarCategoria(id: string, categoriaId: string) {
-    setOcupado(id);
+  function pedirExclusao(t: TransacaoComCategoria) {
+    excluir(t, {
+      mensagem: `"${t.descricao}" excluído.`,
+      comparador: comparadorTransacoes,
+      aoExcluirDeVerdade: () => createClient().from("transacoes").delete().eq("id", t.id),
+      aoErro: (mensagem) => setErro(mensagem),
+    });
+    setSelecionadas((atual) => {
+      if (!atual.has(t.id)) return atual;
+      const novo = new Set(atual);
+      novo.delete(t.id);
+      return novo;
+    });
+  }
+
+  // Trocar a categoria de uma transação atualiza a tela na hora — antes cada
+  // troca disparava um router.refresh() completo, e arrumar 20 transações
+  // depois de uma importação virava 20 idas e voltas ao servidor.
+  async function trocarCategoria(t: TransacaoComCategoria, categoriaId: string) {
+    const categoria = categorias.find((c) => c.id === categoriaId) ?? null;
+    setItens((atual) =>
+      atual.map((x) =>
+        x.id === t.id
+          ? { ...x, categoria_id: categoriaId || null, categorizado_por: "manual", categorias: categoria }
+          : x,
+      ),
+    );
     setErro(null);
     const { error } = await createClient()
       .from("transacoes")
-      .update({
-        categoria_id: categoriaId || null,
-        categorizado_por: "manual",
-      })
-      .eq("id", id);
-    if (error) setErro(error.message);
-    else router.refresh();
-    setOcupado(null);
+      .update({ categoria_id: categoriaId || null, categorizado_por: "manual" })
+      .eq("id", t.id);
+    if (error) {
+      setErro(error.message);
+      setItens((atual) => atual.map((x) => (x.id === t.id ? t : x)));
+    }
+  }
+
+  function alternarSelecao(id: string) {
+    setSelecionadas((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  const tiposSelecionados = new Set(
+    itens.filter((t) => selecionadas.has(t.id)).map((t) => t.tipo),
+  );
+  const tipoBulk =
+    tiposSelecionados.size === 1 ? [...tiposSelecionados][0] : null;
+  const opcoesBulk = tipoBulk
+    ? categorias.filter((c) => (tipoBulk === "receita" ? c.tipo === "receita" : c.tipo === "despesa"))
+    : [];
+
+  async function aplicarCategoriaEmLote() {
+    if (selecionadas.size === 0 || !categoriaBulk) return;
+    setAplicandoBulk(true);
+    setErro(null);
+    const ids = [...selecionadas];
+    const categoria = categorias.find((c) => c.id === categoriaBulk) ?? null;
+    const anteriores = itens.filter((x) => ids.includes(x.id));
+    setItens((atual) =>
+      atual.map((x) =>
+        ids.includes(x.id)
+          ? { ...x, categoria_id: categoriaBulk, categorizado_por: "manual", categorias: categoria }
+          : x,
+      ),
+    );
+    const { error } = await createClient()
+      .from("transacoes")
+      .update({ categoria_id: categoriaBulk, categorizado_por: "manual" })
+      .in("id", ids);
+    if (error) {
+      setErro(error.message);
+      setItens((atual) =>
+        atual.map((x) => anteriores.find((a) => a.id === x.id) ?? x),
+      );
+    } else {
+      setSelecionadas(new Set());
+      setCategoriaBulk("");
+    }
+    setAplicandoBulk(false);
   }
 
   return (
@@ -93,13 +179,20 @@ export default function GerenciadorTransacoes({
             <label className="rotulo" htmlFor="busca">
               Buscar
             </label>
-            <input
-              id="busca"
-              className="campo"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="iFood, aluguel..."
-            />
+            <div className="relative">
+              <input
+                id="busca"
+                className="campo"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="iFood, aluguel..."
+              />
+              {isPending && (
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-suave)]">
+                  Buscando…
+                </span>
+              )}
+            </div>
           </form>
 
           <div>
@@ -130,6 +223,7 @@ export default function GerenciadorTransacoes({
               onChange={(e) => aplicarFiltro("categoria", e.target.value)}
             >
               <option value="">Todas</option>
+              <option value="sem-categoria">Sem categoria</option>
               {categorias.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.icone} {c.nome}
@@ -153,31 +247,101 @@ export default function GerenciadorTransacoes({
       </div>
 
       {erro && (
-        <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+        <p
+          role="alert"
+          className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+        >
           {erro}
         </p>
       )}
 
-      {transacoes.length === 0 ? (
+      {selecionadas.size > 0 && (
+        <div className="painel flex flex-wrap items-center gap-3">
+          <p className="text-sm font-medium">
+            {selecionadas.size} selecionada{selecionadas.size === 1 ? "" : "s"}
+          </p>
+          {tipoBulk ? (
+            <>
+              <select
+                value={categoriaBulk}
+                onChange={(e) => setCategoriaBulk(e.target.value)}
+                className="rounded-lg border border-[var(--color-borda)] bg-[var(--color-fundo)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-verde)]"
+                aria-label="Categoria para aplicar às transações selecionadas"
+              >
+                <option value="">Escolher categoria</option>
+                {opcoesBulk.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.icone} {c.nome}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={aplicarCategoriaEmLote}
+                disabled={!categoriaBulk || aplicandoBulk}
+                className="botao"
+              >
+                {aplicandoBulk ? "Aplicando..." : "Aplicar"}
+              </button>
+            </>
+          ) : (
+            <p className="text-xs text-[var(--color-ambar)]">
+              Selecione lançamentos do mesmo tipo para categorizar em lote.
+            </p>
+          )}
+          <button
+            onClick={() => setSelecionadas(new Set())}
+            className="botao-secundario ml-auto"
+          >
+            Cancelar seleção
+          </button>
+        </div>
+      )}
+
+      {itens.length === 0 ? (
         <Vazio
           titulo="Nenhuma transação encontrada"
           descricao="Ajuste os filtros, importe um extrato ou cadastre um lançamento na mão."
+          acao={
+            filtrosAtivos ? (
+              <button onClick={limparFiltros} className="botao-secundario">
+                Limpar filtros
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setEditando(null);
+                  setFormularioAberto(true);
+                }}
+                className="botao"
+              >
+                + Novo lançamento
+              </button>
+            )
+          }
         />
       ) : (
         <div className="painel p-0">
           <ul className="divide-y divide-[var(--color-borda)]">
-            {transacoes.map((t) => {
+            {itens.map((t) => {
               const opcoes = categorias.filter((c) =>
                 t.tipo === "receita" ? c.tipo === "receita" : c.tipo === "despesa",
               );
               return (
                 <li
                   key={t.id}
-                  className={`flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap ${
-                    ocupado === t.id ? "opacity-50" : ""
-                  }`}
+                  className="flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap"
                 >
+                  <input
+                    type="checkbox"
+                    checked={selecionadas.has(t.id)}
+                    onChange={() => alternarSelecao(t.id)}
+                    disabled={t.tipo === "transferencia"}
+                    className="h-4 w-4 shrink-0 accent-[var(--color-verde)] disabled:opacity-30"
+                    aria-label={`Selecionar ${t.descricao} de ${dataBR(t.data)} para ação em lote`}
+                  />
+
                   <span
+                    aria-hidden="true"
                     className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
                     style={{
                       backgroundColor:
@@ -205,7 +369,7 @@ export default function GerenciadorTransacoes({
                     </p>
                     {t.descricao_original && (
                       <p
-                        className="truncate text-[11px] text-[var(--color-suave)]/70"
+                        className="truncate text-[11px] text-[var(--color-suave)]/85"
                         title={t.descricao_original}
                       >
                         era: {t.descricao_original}
@@ -215,8 +379,9 @@ export default function GerenciadorTransacoes({
 
                   <select
                     value={t.categoria_id ?? ""}
-                    onChange={(e) => trocarCategoria(t.id, e.target.value)}
+                    onChange={(e) => trocarCategoria(t, e.target.value)}
                     disabled={t.tipo === "transferencia"}
+                    aria-label={`Categoria de ${t.descricao}`}
                     className="order-3 w-full rounded-lg border border-[var(--color-borda)] bg-[var(--color-fundo)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-verde)] disabled:opacity-40 sm:order-none sm:w-40"
                   >
                     <option value="">Sem categoria</option>
@@ -240,21 +405,21 @@ export default function GerenciadorTransacoes({
                     {moeda(Number(t.valor))}
                   </span>
 
-                  <span className="flex shrink-0 gap-1">
+                  <span className="flex shrink-0 gap-2">
                     <button
                       onClick={() => {
                         setEditando(t);
                         setFormularioAberto(true);
                       }}
-                      className="rounded-lg px-2 py-1 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-texto)]"
-                      aria-label="Editar"
+                      className="rounded-lg px-3 py-2 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-texto)]"
+                      aria-label={`Editar lançamento ${t.descricao} de ${dataBR(t.data)}`}
                     >
                       Editar
                     </button>
                     <button
-                      onClick={() => excluir(t.id)}
-                      className="rounded-lg px-2 py-1 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-vermelho)]"
-                      aria-label="Excluir"
+                      onClick={() => pedirExclusao(t)}
+                      className="rounded-lg px-3 py-2 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-vermelho)]"
+                      aria-label={`Excluir lançamento ${t.descricao} de ${dataBR(t.data)}`}
                     >
                       Excluir
                     </button>
@@ -378,17 +543,16 @@ function ModalTransacao({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={aoFechar}
+    <Modal
+      aberto
+      aoFechar={aoFechar}
+      posicionamento="base"
+      labelledBy="titulo-modal-transacao"
+      className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-5 sm:rounded-2xl"
     >
-      <form
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={enviar}
-        className="max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-5 sm:rounded-2xl"
-      >
+      <form onSubmit={enviar} className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">
+          <h2 id="titulo-modal-transacao" className="text-lg font-bold">
             {transacao ? "Editar lançamento" : "Novo lançamento"}
           </h2>
           <button
@@ -547,7 +711,10 @@ function ModalTransacao({
         </div>
 
         {erro && (
-          <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+          <p
+            role="alert"
+            className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+          >
             {erro}
           </p>
         )}
@@ -565,6 +732,6 @@ function ModalTransacao({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

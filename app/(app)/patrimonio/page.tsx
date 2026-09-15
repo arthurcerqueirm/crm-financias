@@ -6,8 +6,10 @@ import SeletorMes from "@/components/SeletorMes";
 import { evolucaoPatrimonio, variacao } from "@/lib/agregacoes";
 import { mesAtual } from "@/lib/formato";
 import type { Conta, RegistroPatrimonio } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Patrimônio · Minhas Finanças" };
 
 export default async function PaginaPatrimonio({
   searchParams,
@@ -70,6 +72,7 @@ export default async function PaginaPatrimonio({
         <GerenciadorPatrimonio
           registros={lista}
           contas={(contas ?? []) as Conta[]}
+          mes={mes}
         />
       </section>
     </>

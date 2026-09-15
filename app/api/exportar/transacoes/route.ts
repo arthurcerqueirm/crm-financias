@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, supabaseConfigurado } from "@/lib/supabase/server";
-import { dataBR } from "@/lib/formato";
+import { dataBR, escaparLike, limitesDoMes } from "@/lib/formato";
 import type { TransacaoComCategoria } from "@/lib/tipos";
 
 /** Escapa um campo para CSV: aspas duplicadas, campo inteiro entre aspas. */
@@ -9,11 +9,13 @@ function celulaCSV(valor: string): string {
 }
 
 /**
- * Exporta todas as transações do usuário em CSV — o backup que o app não
- * tinha nenhuma forma de gerar. Não filtra por mês de propósito: é para
- * levar os dados embora, não para uma planilha de um período só.
+ * Exporta as transações do usuário em CSV. Sem parâmetros, exporta tudo — é
+ * o backup para levar os dados embora. Com mes/categoria/tipo/busca (os
+ * mesmos filtros da tela de Transações), exporta só o que está sendo visto
+ * ali, que é o que a pessoa espera ao clicar em "Exportar CSV" numa lista já
+ * filtrada.
  */
-export async function GET() {
+export async function GET(request: Request) {
   if (!supabaseConfigurado()) {
     return NextResponse.json(
       { erro: "O Supabase ainda não foi configurado neste deploy." },
@@ -30,12 +32,31 @@ export async function GET() {
     return NextResponse.json({ erro: "Você precisa estar logado." }, { status: 401 });
   }
 
-  const { data, error } = await supabase
+  const url = new URL(request.url);
+  const mes = url.searchParams.get("mes");
+  const categoria = url.searchParams.get("categoria");
+  const tipo = url.searchParams.get("tipo");
+  const busca = url.searchParams.get("busca");
+
+  let consulta = supabase
     .from("transacoes")
     .select(
       "*, categorias(id,nome,cor,icone), contas!transacoes_conta_id_fkey(id,nome), contas_destino:contas!transacoes_conta_destino_id_fkey(id,nome)",
-    )
-    .order("data", { ascending: false });
+    );
+
+  if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+    const { inicio, fim } = limitesDoMes(mes);
+    consulta = consulta.gte("data", inicio).lte("data", fim);
+  }
+  if (categoria === "sem-categoria") {
+    consulta = consulta.is("categoria_id", null);
+  } else if (categoria) {
+    consulta = consulta.eq("categoria_id", categoria);
+  }
+  if (tipo) consulta = consulta.eq("tipo", tipo);
+  if (busca) consulta = consulta.ilike("descricao", `%${escaparLike(busca)}%`);
+
+  const { data, error } = await consulta.order("data", { ascending: false });
 
   if (error) {
     return NextResponse.json({ erro: error.message }, { status: 500 });
@@ -77,10 +98,12 @@ export async function GET() {
   // BOM UTF-8: sem ele o Excel no Windows lê acentuação errada num CSV UTF-8.
   const csv = "﻿" + [cabecalho.map(celulaCSV).join(";"), ...linhas].join("\r\n");
 
+  const nomeArquivo = mes ? `transacoes-${mes}.csv` : "transacoes.csv";
+
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="transacoes.csv"`,
+      "Content-Disposition": `attachment; filename="${nomeArquivo}"`,
     },
   });
 }

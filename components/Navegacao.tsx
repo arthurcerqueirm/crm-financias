@@ -4,6 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import Modal from "@/components/Modal";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useConfirmacao } from "@/lib/useConfirmacao";
 
 // Ordem usada na barra lateral do desktop (cabe tudo, sem sacrifício).
 const ITENS = [
@@ -13,7 +16,7 @@ const ITENS = [
   { href: "/patrimonio", rotulo: "Patrimônio", icone: "▲" },
   { href: "/analise", rotulo: "Análise IA", icone: "✦" },
   { href: "/categorias", rotulo: "Categorias", icone: "◈" },
-  { href: "/contas", rotulo: "Contas", icone: "🏦" },
+  { href: "/contas", rotulo: "Contas", icone: "▣" },
 ];
 
 // No celular só cabem 4 no rodapé sem espremer — o resto vai para "Mais".
@@ -29,8 +32,11 @@ export default function Navegacao({ email }: { email: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const [maisAberto, setMaisAberto] = useState(false);
+  const confirmacaoSaida = useConfirmacao<true>();
 
   async function sair() {
+    const ok = await confirmacaoSaida.pedir(true);
+    if (!ok) return;
     await createClient().auth.signOut();
     router.push("/login");
     router.refresh();
@@ -53,20 +59,23 @@ export default function Navegacao({ email }: { email: string }) {
           </p>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1">
+        <nav aria-label="Navegação principal" className="flex flex-1 flex-col gap-1">
           {ITENS.map((item) => {
             const ativo = estaAtivo(pathname, item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={ativo ? "page" : undefined}
                 className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
                   ativo
                     ? "bg-[var(--color-verde)]/12 text-[var(--color-verde)]"
                     : "text-[var(--color-suave)] hover:bg-[var(--color-painel-alto)] hover:text-[var(--color-texto)]"
                 }`}
               >
-                <span className="w-4 text-center text-base">{item.icone}</span>
+                <span aria-hidden="true" className="w-4 text-center text-base">
+                  {item.icone}
+                </span>
                 {item.rotulo}
               </Link>
             );
@@ -88,73 +97,96 @@ export default function Navegacao({ email }: { email: string }) {
         </p>
         <button
           onClick={sair}
-          className="text-xs font-medium text-[var(--color-suave)]"
+          className="rounded px-2 py-1.5 text-xs font-medium text-[var(--color-suave)]"
         >
           Sair
         </button>
       </header>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-[var(--color-borda)] bg-[var(--color-painel)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+      <nav
+        aria-label="Navegação principal"
+        className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-[var(--color-borda)] bg-[var(--color-painel)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      >
         {ITENS_PRINCIPAIS.map((item) => {
           const ativo = estaAtivo(pathname, item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition ${
+              aria-current={ativo ? "page" : undefined}
+              className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition ${
                 ativo ? "text-[var(--color-verde)]" : "text-[var(--color-suave)]"
               }`}
             >
-              <span className="text-base leading-none">{item.icone}</span>
+              <span aria-hidden="true" className="text-base leading-none">
+                {item.icone}
+              </span>
               {item.rotulo}
             </Link>
           );
         })}
         <button
           onClick={() => setMaisAberto(true)}
-          className={`flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition ${
+          aria-haspopup="dialog"
+          className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition ${
             algumSecundarioAtivo
               ? "text-[var(--color-verde)]"
               : "text-[var(--color-suave)]"
           }`}
         >
-          <span className="text-base leading-none">⋯</span>
+          <span aria-hidden="true" className="text-base leading-none">
+            ⋯
+          </span>
           Mais
         </button>
       </nav>
 
-      {maisAberto && (
-        <div
-          className="fixed inset-0 z-30 flex items-end bg-black/60 backdrop-blur-sm lg:hidden"
-          onClick={() => setMaisAberto(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
-          >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[var(--color-borda)]" />
-            <div className="grid grid-cols-3 gap-2">
-              {ITENS_SECUNDARIOS.map((item) => {
-                const ativo = estaAtivo(pathname, item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMaisAberto(false)}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-4 text-xs font-medium transition ${
-                      ativo
-                        ? "bg-[var(--color-verde)]/12 text-[var(--color-verde)]"
-                        : "text-[var(--color-suave)] hover:bg-[var(--color-painel-alto)]"
-                    }`}
-                  >
-                    <span className="text-xl leading-none">{item.icone}</span>
-                    {item.rotulo}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
+      <Modal
+        aberto={maisAberto}
+        aoFechar={() => setMaisAberto(false)}
+        posicionamento="base"
+        labelledBy="titulo-mais"
+        className="w-full rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] lg:hidden"
+      >
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[var(--color-borda)]" />
+        <h2 id="titulo-mais" className="sr-only">
+          Mais opções
+        </h2>
+        <div className="grid grid-cols-3 gap-2">
+          {ITENS_SECUNDARIOS.map((item) => {
+            const ativo = estaAtivo(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMaisAberto(false)}
+                aria-current={ativo ? "page" : undefined}
+                className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-4 text-xs font-medium transition ${
+                  ativo
+                    ? "bg-[var(--color-verde)]/12 text-[var(--color-verde)]"
+                    : "text-[var(--color-suave)] hover:bg-[var(--color-painel-alto)]"
+                }`}
+              >
+                <span aria-hidden="true" className="text-xl leading-none">
+                  {item.icone}
+                </span>
+                {item.rotulo}
+              </Link>
+            );
+          })}
         </div>
+      </Modal>
+
+      {confirmacaoSaida.alvo && (
+        <ConfirmDialog
+          aberto
+          titulo="Sair da conta"
+          mensagem="Você vai precisar entrar de novo com seu e-mail e senha para acessar suas finanças."
+          rotuloConfirmar="Sair"
+          perigo={false}
+          aoConfirmar={confirmacaoSaida.confirmar}
+          aoCancelar={confirmacaoSaida.cancelar}
+        />
       )}
     </>
   );

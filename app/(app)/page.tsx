@@ -18,8 +18,10 @@ import {
 } from "@/lib/agregacoes";
 import { dataBR, limitesDoMes, mesAnterior, mesAtual, moeda, ultimosMeses } from "@/lib/formato";
 import type { Categoria, RegistroPatrimonio, TransacaoComCategoria } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Painel · Minhas Finanças" };
 
 export default async function Painel({
   searchParams,
@@ -106,6 +108,7 @@ export default async function Painel({
           valor={despesas}
           cor="vermelho"
           variacao={variacao(despesas, despesasAnterior)}
+          bomQuandoSobe={false}
         />
         <CartaoKPI
           rotulo="Sobrou no mês"
@@ -191,6 +194,23 @@ export default async function Painel({
                   orcamento={orcamentoPorCategoria.get(c.id)}
                 />
               ))}
+              {categoriasGasto.length > 9 && (
+                <p className="text-xs text-[var(--color-suave)]">
+                  + {categoriasGasto.length - 9} outra
+                  {categoriasGasto.length - 9 === 1 ? "" : "s"} categoria
+                  {categoriasGasto.length - 9 === 1 ? "" : "s"} ·{" "}
+                  {moeda(
+                    categoriasGasto.slice(9).reduce((s, c) => s + c.total, 0),
+                  )}{" "}
+                  ·{" "}
+                  <Link
+                    href="/transacoes"
+                    className="text-[var(--color-verde)] underline"
+                  >
+                    ver tudo
+                  </Link>
+                </p>
+              )}
             </div>
           )}
         </div>

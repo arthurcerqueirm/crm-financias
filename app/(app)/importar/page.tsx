@@ -4,8 +4,10 @@ import HistoricoImportacoes, {
   type ImportacaoHistorico,
 } from "@/components/HistoricoImportacoes";
 import type { Categoria, Conta } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Importar extrato · Minhas Finanças" };
 
 export default async function PaginaImportar() {
   const supabase = await createClient();

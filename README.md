@@ -29,10 +29,14 @@ patrimônio. Feito para rodar na Vercel com banco no Supabase.
 - **Categorias e orçamentos** — cor, ícone, palavras-chave e teto mensal.
 - **Transferências entre contas** — registra origem e destino, não conta como
   receita nem despesa.
-- **Exportar CSV** — baixa todas as transações a qualquer momento, para um
-  backup fora do app.
+- **Exportar CSV** — baixa as transações a qualquer momento — tudo ou só o que
+  está filtrado na tela (mês, categoria, tipo, busca).
 
 Tudo responsivo: barra lateral no computador, navegação inferior no celular.
+Excluir uma transação, categoria, conta ou registro de patrimônio nunca pede
+confirmação nativa do navegador — some na hora e fica alguns segundos com a
+opção "Desfazer" no rodapé, antes de apagar de verdade no banco. Modais
+fecham com Esc, prendem o foco e devolvem o foco a quem abriu.
 
 ## Como colocar no ar
 

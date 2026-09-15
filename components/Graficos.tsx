@@ -63,35 +63,40 @@ function Caixa({
 
 export function GraficoReceitaDespesa({ dados }: { dados: ResumoMes[] }) {
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={dados} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
-        <CartesianGrid {...GRADE} vertical={false} />
-        <XAxis dataKey="mes" tickFormatter={mesCurto} {...EIXO} />
-        <YAxis tickFormatter={(v: number) => moeda(v, true)} {...EIXO} width={62} />
-        <Tooltip
-          cursor={{ fill: "#ffffff08" }}
-          content={({ active, payload, label }) =>
-            active && payload?.length ? (
-              <Caixa
-                titulo={mesCurto(String(label))}
-                itens={[
-                  { nome: "Receitas", valor: Number(payload[0]?.value ?? 0), cor: "#2ecc8f" },
-                  { nome: "Despesas", valor: Number(payload[1]?.value ?? 0), cor: "#ff5c72" },
-                ]}
-              />
-            ) : null
-          }
-        />
-        <Legend
-          wrapperStyle={{ fontSize: 12, color: "#8ba0b6", paddingTop: 8 }}
-          formatter={(v) => (
-            <span className="text-[var(--color-suave)]">{v}</span>
-          )}
-        />
-        <Bar dataKey="receitas" name="Receitas" fill="#2ecc8f" radius={[5, 5, 0, 0]} maxBarSize={38} />
-        <Bar dataKey="despesas" name="Despesas" fill="#ff5c72" radius={[5, 5, 0, 0]} maxBarSize={38} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div
+      role="img"
+      aria-label={`Gráfico de barras comparando receitas e despesas dos últimos ${dados.length} meses.`}
+    >
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={dados} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+          <CartesianGrid {...GRADE} vertical={false} />
+          <XAxis dataKey="mes" tickFormatter={mesCurto} {...EIXO} />
+          <YAxis tickFormatter={(v: number) => moeda(v, true)} {...EIXO} width={62} />
+          <Tooltip
+            cursor={{ fill: "#ffffff08" }}
+            content={({ active, payload, label }) =>
+              active && payload?.length ? (
+                <Caixa
+                  titulo={mesCurto(String(label))}
+                  itens={[
+                    { nome: "Receitas", valor: Number(payload[0]?.value ?? 0), cor: "#2ecc8f" },
+                    { nome: "Despesas", valor: Number(payload[1]?.value ?? 0), cor: "#ff5c72" },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 12, color: "#8ba0b6", paddingTop: 8 }}
+            formatter={(v) => (
+              <span className="text-[var(--color-suave)]">{v}</span>
+            )}
+          />
+          <Bar dataKey="receitas" name="Receitas" fill="#2ecc8f" radius={[5, 5, 0, 0]} maxBarSize={38} />
+          <Bar dataKey="despesas" name="Despesas" fill="#ff5c72" radius={[5, 5, 0, 0]} maxBarSize={38} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -109,39 +114,63 @@ export function GraficoCategorias({ dados }: { dados: FatiaCategoria[] }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <PieChart>
-        <Pie
-          data={dados}
-          dataKey="total"
-          nameKey="nome"
-          cx="50%"
-          cy="50%"
-          innerRadius={62}
-          outerRadius={98}
-          paddingAngle={2}
-          stroke="none"
-        >
-          {dados.map((fatia) => (
-            <Cell key={fatia.id} fill={fatia.cor} />
-          ))}
-        </Pie>
-        <Tooltip
-          content={({ active, payload }) => {
-            if (!active || !payload?.length) return null;
-            const fatia = payload[0].payload as FatiaCategoria;
-            return (
-              <Caixa
-                titulo={`${fatia.icone} ${fatia.nome}`}
-                itens={[
-                  { nome: `${fatia.fatia.toFixed(1)}% do total`, valor: fatia.total, cor: fatia.cor },
-                ]}
-              />
-            );
-          }}
-        />
-      </PieChart>
-    </ResponsiveContainer>
+    <div
+      role="img"
+      aria-label={`Gráfico de rosca com ${dados.length} categorias de gasto. Maior: ${dados[0].nome}, ${dados[0].fatia.toFixed(0)}% do total.`}
+    >
+      <ResponsiveContainer width="100%" height={260}>
+        <PieChart>
+          <Pie
+            data={dados}
+            dataKey="total"
+            nameKey="nome"
+            cx="50%"
+            cy="50%"
+            innerRadius={62}
+            outerRadius={98}
+            paddingAngle={2}
+            stroke="none"
+          >
+            {dados.map((fatia) => (
+              <Cell key={fatia.id} fill={fatia.cor} />
+            ))}
+          </Pie>
+          <Tooltip
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const fatia = payload[0].payload as FatiaCategoria;
+              return (
+                <Caixa
+                  titulo={`${fatia.icone} ${fatia.nome}`}
+                  itens={[
+                    { nome: `${fatia.fatia.toFixed(1)}% do total`, valor: fatia.total, cor: fatia.cor },
+                  ]}
+                />
+              );
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+
+      {/* Legenda própria em vez da do Recharts: em lista, com nome e valor
+          sempre visíveis — não depende só da cor da fatia para diferenciar
+          categorias, e não fica ilegível com 12+ categorias apertadas embaixo
+          do gráfico. */}
+      <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+        {dados.slice(0, 8).map((fatia) => (
+          <li key={fatia.id} className="flex items-center gap-1.5 text-xs">
+            <span
+              aria-hidden="true"
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ backgroundColor: fatia.cor }}
+            />
+            <span className="text-[var(--color-suave)]">
+              {fatia.icone} {fatia.nome}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -154,7 +183,12 @@ export function GraficoPatrimonio({
 }: {
   dados: { mes: string; ativos: number; passivos: number; liquido: number }[];
 }) {
+  const ultimo = dados.at(-1);
   return (
+    <div
+      role="img"
+      aria-label={`Gráfico de área com a evolução do patrimônio líquido nos últimos ${dados.length} meses${ultimo ? `, hoje em ${moeda(ultimo.liquido)}` : ""}.`}
+    >
     <ResponsiveContainer width="100%" height={280}>
       <AreaChart data={dados} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
         <defs>
@@ -189,6 +223,7 @@ export function GraficoPatrimonio({
         />
       </AreaChart>
     </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -206,6 +241,7 @@ export function GraficoTendencia({
   rotulo: string;
 }) {
   return (
+    <div role="img" aria-label={`Gráfico de linha: ${rotulo} nos últimos ${dados.length} meses.`}>
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={dados} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
         <CartesianGrid {...GRADE} vertical={false} />
@@ -231,6 +267,7 @@ export function GraficoTendencia({
         />
       </LineChart>
     </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -240,6 +277,7 @@ export function GraficoTendencia({
 
 export function GraficoSaldoMensal({ dados }: { dados: ResumoMes[] }) {
   return (
+    <div role="img" aria-label={`Gráfico de área: quanto sobrou por mês nos últimos ${dados.length} meses.`}>
     <ResponsiveContainer width="100%" height={220}>
       <AreaChart data={dados} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
         <defs>
@@ -270,5 +308,6 @@ export function GraficoSaldoMensal({ dados }: { dados: ResumoMes[] }) {
         />
       </AreaChart>
     </ResponsiveContainer>
+    </div>
   );
 }

@@ -1,31 +1,56 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { dataBR, hojeISO, lerValorPositivo, moeda } from "@/lib/formato";
+import { dataBR, lerValorPositivo, mesLongo, moeda } from "@/lib/formato";
+import { mesDa } from "@/lib/agregacoes";
 import { PreviaValor, Vazio } from "@/components/Ui";
+import { useListaComDesfazer } from "@/lib/useListaComDesfazer";
 import type { Conta, RegistroPatrimonio } from "@/lib/tipos";
 
 export default function GerenciadorPatrimonio({
   registros,
   contas,
+  mes,
 }: {
   registros: RegistroPatrimonio[];
   contas: Conta[];
+  /** Mês selecionado na tela (SeletorMes) — o formulário registra saldo nele, não sempre no mês atual. */
+  mes: string;
 }) {
   const router = useRouter();
   const [nome, setNome] = useState("");
   const [tipo, setTipo] = useState<"ativo" | "passivo">("ativo");
   const [valor, setValor] = useState("");
-  const [data, setData] = useState(hojeISO().slice(0, 8) + "01");
+  const [data, setData] = useState(`${mes}-01`);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  // Quando a pessoa troca o mês no topo da página, o formulário passa a
+  // registrar naquele mês — antes ficava sempre preso no mês corrente,
+  // então dava para navegar até julho, preencher o formulário e o registro
+  // cair em setembro sem nenhum aviso.
+  useEffect(() => {
+    setData(`${mes}-01`);
+  }, [mes]);
+
+  const { itens, excluir } = useListaComDesfazer<RegistroPatrimonio>(registros);
 
   // Nomes já usados viram sugestão, para o histórico do mesmo ativo não quebrar.
   const nomesConhecidos = [
     ...new Set([...registros.map((r) => r.nome), ...contas.map((c) => c.nome)]),
   ];
+
+  const gruposPorMes = useMemo(() => {
+    const mapa = new Map<string, RegistroPatrimonio[]>();
+    for (const r of itens) {
+      const chave = mesDa(r.data);
+      if (!mapa.has(chave)) mapa.set(chave, []);
+      mapa.get(chave)!.push(r);
+    }
+    return [...mapa.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [itens]);
 
   async function salvar(evento: React.FormEvent) {
     evento.preventDefault();
@@ -70,11 +95,14 @@ export default function GerenciadorPatrimonio({
     setSalvando(false);
   }
 
-  async function excluir(id: string) {
-    if (!confirm("Excluir este registro?")) return;
-    const { error } = await createClient().from("patrimonio").delete().eq("id", id);
-    if (error) setErro(error.message);
-    else router.refresh();
+  function pedirExclusao(registro: RegistroPatrimonio) {
+    excluir(registro, {
+      mensagem: `"${registro.nome}" excluído.`,
+      comparador: (a, b) => b.data.localeCompare(a.data),
+      aoExcluirDeVerdade: () =>
+        createClient().from("patrimonio").delete().eq("id", registro.id),
+      aoErro: (mensagem) => setErro(mensagem),
+    });
   }
 
   return (
@@ -151,13 +179,16 @@ export default function GerenciadorPatrimonio({
         </div>
 
         {erro && (
-          <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+          <p
+            role="alert"
+            className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+          >
             {erro}
           </p>
         )}
 
         <button type="submit" disabled={salvando} className="botao w-full">
-          {salvando ? "Salvando..." : "Salvar registro"}
+          {salvando ? "Salvando..." : `Salvar em ${mesLongo(mes)}`}
         </button>
 
         <p className="text-xs text-[var(--color-suave)]">
@@ -167,48 +198,65 @@ export default function GerenciadorPatrimonio({
       </form>
 
       <div className="lg:col-span-2">
-        {registros.length === 0 ? (
+        {itens.length === 0 ? (
           <Vazio
             titulo="Nenhum registro ainda"
             descricao="Comece pelo saldo das suas contas e investimentos neste mês."
           />
         ) : (
-          <div className="painel p-0">
-            <ul className="divide-y divide-[var(--color-borda)]">
-              {registros.map((r) => (
-                <li key={r.id} className="flex items-center gap-3 px-4 py-3">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      r.tipo === "ativo"
-                        ? "bg-[var(--color-verde)]"
-                        : "bg-[var(--color-vermelho)]"
-                    }`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{r.nome}</p>
-                    <p className="text-xs text-[var(--color-suave)]">
-                      {dataBR(r.data)} · {r.tipo === "ativo" ? "Ativo" : "Dívida"}
-                    </p>
-                  </div>
-                  <span
-                    className={`text-sm font-semibold tabular-nums ${
-                      r.tipo === "ativo"
-                        ? "text-[var(--color-texto)]"
-                        : "text-[var(--color-vermelho)]"
-                    }`}
-                  >
-                    {r.tipo === "passivo" && "−"}
-                    {moeda(Number(r.valor))}
-                  </span>
-                  <button
-                    onClick={() => excluir(r.id)}
-                    className="shrink-0 px-1 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-vermelho)]"
-                  >
-                    Excluir
-                  </button>
-                </li>
-              ))}
-            </ul>
+          <div className="space-y-4">
+            {gruposPorMes.map(([chaveMes, registrosDoMes]) => (
+              <div
+                key={chaveMes}
+                className={`painel p-0 ${
+                  chaveMes === mes ? "ring-1 ring-[var(--color-verde)]/40" : ""
+                }`}
+              >
+                <p className="titulo-painel flex items-center gap-2 px-4 pt-3">
+                  {mesLongo(chaveMes)}
+                  {chaveMes === mes && (
+                    <span className="chip text-[var(--color-verde)]">mês atual da tela</span>
+                  )}
+                </p>
+                <ul className="mt-1 divide-y divide-[var(--color-borda)]">
+                  {registrosDoMes.map((r) => (
+                    <li key={r.id} className="flex items-center gap-3 px-4 py-3">
+                      <span
+                        aria-hidden="true"
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          r.tipo === "ativo"
+                            ? "bg-[var(--color-verde)]"
+                            : "bg-[var(--color-vermelho)]"
+                        }`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{r.nome}</p>
+                        <p className="text-xs text-[var(--color-suave)]">
+                          {dataBR(r.data)} · {r.tipo === "ativo" ? "Ativo" : "Dívida"}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${
+                          r.tipo === "ativo"
+                            ? "text-[var(--color-texto)]"
+                            : "text-[var(--color-vermelho)]"
+                        }`}
+                      >
+                        {r.tipo === "passivo" && "−"}
+                        {moeda(Number(r.valor))}
+                      </span>
+                      <button
+                        onClick={() => pedirExclusao(r)}
+                        aria-label={`Excluir registro de ${r.nome} em ${dataBR(r.data)}`}
+                        className="shrink-0 rounded-lg px-2.5 py-2 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-vermelho)]"
+                      >
+                        Excluir
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         )}
       </div>

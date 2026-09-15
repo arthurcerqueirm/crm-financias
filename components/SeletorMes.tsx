@@ -23,7 +23,10 @@ export default function SeletorMes({
   function ir(novoMes: string) {
     const novos = new URLSearchParams(params.toString());
     novos.set("mes", novoMes);
-    router.push(`${pathname}?${novos.toString()}`);
+    // replace, não push: cada troca de mês não deveria virar uma entrada no
+    // histórico — clicar "‹" oito vezes e depois "voltar" no celular
+    // rebobinava mês por mês em vez de sair da tela.
+    router.replace(`${pathname}?${novos.toString()}`);
   }
 
   const podeAvancar = mes < maximo;
@@ -48,6 +51,14 @@ export default function SeletorMes({
       >
         ›
       </button>
+      {mes !== maximo && (
+        <button
+          onClick={() => ir(maximo)}
+          className="ml-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--color-verde)] transition hover:underline"
+        >
+          hoje
+        </button>
+      )}
     </div>
   );
 }

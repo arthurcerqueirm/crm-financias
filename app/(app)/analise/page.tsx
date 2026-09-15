@@ -2,11 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import PainelAnalise from "@/components/PainelAnalise";
 import SeletorMes from "@/components/SeletorMes";
 import { GraficoTendencia } from "@/components/GraficosDinamicos";
-import { limitesDoMes, mesAtual, ultimosMeses } from "@/lib/formato";
-import { mesDa, porCategoria, serieMensal, somar } from "@/lib/agregacoes";
+import { limitesDoMes, mesAtual, moeda, ultimosMeses } from "@/lib/formato";
+import { detectarRecorrentes, mesDa, porCategoria, serieMensal, somar } from "@/lib/agregacoes";
 import type { Insight, TransacaoComCategoria } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Análise IA · Minhas Finanças" };
 
 export default async function PaginaAnalise({
   searchParams,
@@ -35,6 +37,11 @@ export default async function PaginaAnalise({
   const lista = (transacoes ?? []) as TransacaoComCategoria[];
   const doMes = lista.filter((t) => mesDa(t.data) === mes);
   const maiorCategoria = porCategoria(doMes, "despesa")[0];
+
+  // Assinaturas e mensalidades: a mesma descrição e valor se repetindo em
+  // pelo menos dois dos últimos meses. O app já calcula isso para dar
+  // contexto à IA (lib/agregacoes.ts) — mostrar aqui não custa nada a mais.
+  const recorrentes = detectarRecorrentes(lista).slice(0, 6);
 
   const serie = serieMensal(lista, 6, mes);
   const tendenciaTopo = maiorCategoria
@@ -96,6 +103,33 @@ export default async function PaginaAnalise({
                   cor={maiorCategoria.cor}
                 />
               </div>
+            </div>
+          )}
+
+          {recorrentes.length > 0 && (
+            <div className="painel">
+              <p className="titulo-painel">Assinaturas detectadas</p>
+              <p className="mt-1 text-xs text-[var(--color-suave)]">
+                Mesma descrição e valor em pelo menos dois dos últimos 6 meses.
+              </p>
+              <ul className="mt-3 divide-y divide-[var(--color-borda)]">
+                {recorrentes.map((r) => (
+                  <li
+                    key={`${r.descricao}-${r.valor}`}
+                    className="flex items-center gap-3 py-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {r.descricao}
+                    </span>
+                    <span className="shrink-0 text-xs text-[var(--color-suave)]">
+                      {r.ocorrencias}x
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums">
+                      {moeda(r.valor)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

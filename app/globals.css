@@ -20,6 +20,26 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Anel de foco visível para navegação por teclado — só aparece com Tab,
+   nunca com clique de mouse, graças a :focus-visible. Sem isto, tabular
+   pela página não mostrava onde o foco estava fora dos campos de texto. */
+:focus-visible {
+  outline: 2px solid var(--color-verde);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 body {
   background-color: var(--color-fundo);
   color: var(--color-texto);
@@ -55,7 +75,7 @@ body::before {
   .campo {
     @apply w-full rounded-xl border border-[var(--color-borda)] bg-[var(--color-fundo)]
            px-3 py-2.5 text-[15px] text-[var(--color-texto)] outline-none
-           transition-colors placeholder:text-[var(--color-suave)]/60
+           transition-colors placeholder:text-[var(--color-suave)]/80
            focus:border-[var(--color-verde)];
   }
 
@@ -76,6 +96,13 @@ body::before {
            text-sm font-semibold text-[var(--color-texto)] transition
            hover:border-[var(--color-suave)]/50 active:scale-[0.98]
            disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .botao-perigo {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-vermelho)]
+           px-4 py-2.5 text-sm font-semibold text-[#2a0508] transition
+           hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed
+           disabled:opacity-50 disabled:hover:brightness-100;
   }
 
   .chip {

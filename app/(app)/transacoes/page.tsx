@@ -4,8 +4,10 @@ import { escaparLike, limitesDoMes, mesAtual, moeda } from "@/lib/formato";
 import { somar } from "@/lib/agregacoes";
 import SeletorMes from "@/components/SeletorMes";
 import type { Categoria, Conta, TransacaoComCategoria } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Transações · Minhas Finanças" };
 
 export default async function PaginaTransacoes({
   searchParams,
@@ -26,7 +28,11 @@ export default async function PaginaTransacoes({
     .gte("data", inicio)
     .lte("data", fim);
 
-  if (params.categoria) consulta = consulta.eq("categoria_id", params.categoria);
+  if (params.categoria === "sem-categoria") {
+    consulta = consulta.is("categoria_id", null);
+  } else if (params.categoria) {
+    consulta = consulta.eq("categoria_id", params.categoria);
+  }
   if (params.tipo) consulta = consulta.eq("tipo", params.tipo);
   if (params.busca) {
     consulta = consulta.ilike("descricao", `%${escaparLike(params.busca)}%`);
@@ -43,6 +49,14 @@ export default async function PaginaTransacoes({
   const receitas = somar(lista, "receita");
   const despesas = somar(lista, "despesa");
 
+  const filtrosAtivos =
+    !!params.categoria || !!params.tipo || !!params.busca;
+  const querExportar = new URLSearchParams();
+  querExportar.set("mes", mes);
+  if (params.categoria) querExportar.set("categoria", params.categoria);
+  if (params.tipo) querExportar.set("tipo", params.tipo);
+  if (params.busca) querExportar.set("busca", params.busca);
+
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -58,9 +72,13 @@ export default async function PaginaTransacoes({
         </div>
         <div className="flex items-center gap-2">
           <a
-            href="/api/exportar/transacoes"
+            href={`/api/exportar/transacoes?${querExportar.toString()}`}
             className="botao-secundario"
-            title="Baixa todas as suas transações em CSV, de qualquer período"
+            title={
+              filtrosAtivos
+                ? "Baixa as transações filtradas nesta tela"
+                : `Baixa as transações de ${mes}`
+            }
           >
             Exportar CSV
           </a>

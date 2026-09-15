@@ -4,8 +4,10 @@ import SeletorMes from "@/components/SeletorMes";
 import { limitesDoMes, mesAtual } from "@/lib/formato";
 import { porCategoria } from "@/lib/agregacoes";
 import type { Categoria, TransacaoComCategoria } from "@/lib/tipos";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Categorias · Minhas Finanças" };
 
 export default async function PaginaCategorias({
   searchParams,

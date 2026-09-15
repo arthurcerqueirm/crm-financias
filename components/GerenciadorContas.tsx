@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { lerValorPositivo, moeda } from "@/lib/formato";
+import { lerValor, moeda } from "@/lib/formato";
 import { PreviaValor, Vazio } from "@/components/Ui";
+import Modal from "@/components/Modal";
+import { useListaComDesfazer } from "@/lib/useListaComDesfazer";
 import type { Conta } from "@/lib/tipos";
 
 const TIPOS: { valor: Conta["tipo"]; rotulo: string }[] = [
@@ -31,6 +33,8 @@ export default function GerenciadorContas({
   const [erro, setErro] = useState<string | null>(null);
   const [ocupada, setOcupada] = useState<string | null>(null);
 
+  const { itens, excluir } = useListaComDesfazer<Conta>(contas);
+
   async function alternarAtiva(conta: Conta) {
     setOcupada(conta.id);
     setErro(null);
@@ -43,19 +47,14 @@ export default function GerenciadorContas({
     setOcupada(null);
   }
 
-  async function excluir(conta: Conta) {
-    if (
-      !confirm(
-        `Excluir "${conta.nome}"? As transações e registros de patrimônio dela ficam sem conta associada, mas continuam existindo.`,
-      )
-    )
-      return;
-    setOcupada(conta.id);
-    setErro(null);
-    const { error } = await createClient().from("contas").delete().eq("id", conta.id);
-    if (error) setErro(error.message);
-    else router.refresh();
-    setOcupada(null);
+  function pedirExclusao(conta: Conta) {
+    excluir(conta, {
+      mensagem: `"${conta.nome}" excluída.`,
+      comparador: (a, b) =>
+        Number(b.ativa) - Number(a.ativa) || a.nome.localeCompare(b.nome),
+      aoExcluirDeVerdade: () => createClient().from("contas").delete().eq("id", conta.id),
+      aoErro: (mensagem) => setErro(mensagem),
+    });
   }
 
   return (
@@ -65,20 +64,28 @@ export default function GerenciadorContas({
       </button>
 
       {erro && (
-        <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+        <p
+          role="alert"
+          className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+        >
           {erro}
         </p>
       )}
 
-      {contas.length === 0 ? (
+      {itens.length === 0 ? (
         <Vazio
           titulo="Nenhuma conta cadastrada"
           descricao="Crie sua primeira conta para importar extratos e registrar patrimônio."
+          acao={
+            <button onClick={() => setCriando(true)} className="botao">
+              + Nova conta
+            </button>
+          }
         />
       ) : (
         <div className="painel p-0">
           <ul className="divide-y divide-[var(--color-borda)]">
-            {contas.map((c) => {
+            {itens.map((c) => {
               const saldo = (c.saldo_inicial ?? 0) + (saldosPorConta[c.id] ?? 0);
               return (
                 <li
@@ -88,10 +95,10 @@ export default function GerenciadorContas({
                   } ${!c.ativa ? "opacity-60" : ""}`}
                 >
                   <div className="min-w-0 flex-1 basis-40">
-                    <p className="truncate text-sm font-medium">
-                      {c.nome}
+                    <p className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{c.nome}</span>
                       {!c.ativa && (
-                        <span className="ml-2 chip text-[var(--color-suave)]">
+                        <span className="chip shrink-0 text-[var(--color-suave)]">
                           Inativa
                         </span>
                       )}
@@ -102,26 +109,33 @@ export default function GerenciadorContas({
                     </p>
                   </div>
 
-                  <span className="shrink-0 text-sm font-semibold tabular-nums">
+                  <span
+                    className={`shrink-0 text-sm font-semibold tabular-nums ${
+                      saldo < 0 ? "text-[var(--color-vermelho)]" : ""
+                    }`}
+                  >
                     {moeda(saldo)}
                   </span>
 
-                  <span className="flex shrink-0 gap-1">
+                  <span className="flex shrink-0 gap-2">
                     <button
                       onClick={() => setEditando(c)}
-                      className="rounded-lg px-2 py-1 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-texto)]"
+                      className="rounded-lg px-3 py-2 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-texto)]"
+                      aria-label={`Editar conta ${c.nome}`}
                     >
                       Editar
                     </button>
                     <button
                       onClick={() => alternarAtiva(c)}
-                      className="rounded-lg px-2 py-1 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-texto)]"
+                      className="rounded-lg px-3 py-2 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-texto)]"
+                      aria-label={`${c.ativa ? "Desativar" : "Reativar"} conta ${c.nome}`}
                     >
                       {c.ativa ? "Desativar" : "Reativar"}
                     </button>
                     <button
-                      onClick={() => excluir(c)}
-                      className="rounded-lg px-2 py-1 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-vermelho)]"
+                      onClick={() => pedirExclusao(c)}
+                      className="rounded-lg px-3 py-2 text-xs text-[var(--color-suave)] transition hover:text-[var(--color-vermelho)]"
+                      aria-label={`Excluir conta ${c.nome}`}
                     >
                       Excluir
                     </button>
@@ -174,7 +188,9 @@ function ModalConta({
 
     let saldo = 0;
     if (saldoInicial.trim() && saldoInicial.trim() !== "0") {
-      const numero = lerValorPositivo(saldoInicial);
+      // lerValor (não lerValorPositivo): saldo inicial negativo é válido —
+      // cartão com fatura aberta, conta no cheque especial.
+      const numero = lerValor(saldoInicial);
       if (numero === null) {
         setErro(`Não entendi "${saldoInicial}" como um valor.`);
         return;
@@ -222,17 +238,16 @@ function ModalConta({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={aoFechar}
+    <Modal
+      aberto
+      aoFechar={aoFechar}
+      posicionamento="base"
+      labelledBy="titulo-modal-conta"
+      className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-5 sm:rounded-2xl"
     >
-      <form
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={enviar}
-        className="max-h-[92vh] w-full max-w-md space-y-4 overflow-y-auto rounded-t-2xl border border-[var(--color-borda)] bg-[var(--color-painel)] p-5 sm:rounded-2xl"
-      >
+      <form onSubmit={enviar} className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">
+          <h2 id="titulo-modal-conta" className="text-lg font-bold">
             {conta ? "Editar conta" : "Nova conta"}
           </h2>
           <button
@@ -302,14 +317,18 @@ function ModalConta({
             onChange={(e) => setSaldoInicial(e.target.value)}
             placeholder="0,00"
           />
-          <PreviaValor texto={saldoInicial} />
+          <PreviaValor texto={saldoInicial} permitirNegativo />
           <p className="mt-1 text-xs text-[var(--color-suave)]">
-            O saldo que a conta já tinha antes de você começar a usar o app.
+            O saldo que a conta já tinha antes de você começar a usar o app. Pode
+            ser negativo — cartão com fatura aberta, cheque especial usado.
           </p>
         </div>
 
         {erro && (
-          <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+          <p
+            role="alert"
+            className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+          >
             {erro}
           </p>
         )}
@@ -323,6 +342,6 @@ function ModalConta({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

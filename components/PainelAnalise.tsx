@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { moeda, mesLongo } from "@/lib/formato";
+import { dataBR, moeda, mesLongo } from "@/lib/formato";
 import type { Insight } from "@/lib/tipos";
 
 export default function PainelAnalise({
@@ -46,7 +46,7 @@ export default function PainelAnalise({
           <p className="font-semibold">{mesLongo(mes)}</p>
           <p className="text-xs text-[var(--color-suave)]">
             {insight
-              ? `Última análise em ${new Date(insight.created_at).toLocaleDateString("pt-BR")}`
+              ? `Última análise em ${dataBR(insight.created_at)}`
               : "Ainda sem análise para este mês"}
           </p>
         </div>
@@ -71,7 +71,10 @@ export default function PainelAnalise({
       )}
 
       {erro && (
-        <p className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]">
+        <p
+          role="alert"
+          className="rounded-xl border border-[var(--color-vermelho)]/30 bg-[var(--color-vermelho)]/10 px-3 py-2.5 text-sm text-[var(--color-vermelho)]"
+        >
           {erro}
         </p>
       )}
