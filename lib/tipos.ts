@@ -29,6 +29,8 @@ export type Transacao = {
   id: string;
   user_id: string;
   conta_id: string | null;
+  /** Só usado quando tipo === "transferencia": a conta que recebeu o dinheiro. */
+  conta_destino_id: string | null;
   categoria_id: string | null;
   importacao_id: string | null;
   data: string;
@@ -46,6 +48,7 @@ export type Transacao = {
 export type TransacaoComCategoria = Transacao & {
   categorias: Pick<Categoria, "id" | "nome" | "cor" | "icone"> | null;
   contas: Pick<Conta, "id" | "nome"> | null;
+  contas_destino: Pick<Conta, "id" | "nome"> | null;
 };
 
 export type RegistroPatrimonio = {

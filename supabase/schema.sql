@@ -243,3 +243,58 @@ end;
 $$;
 
 grant execute on function public.registrar_uso_ia(integer, integer, integer) to authenticated;
+
+-- ============================================================
+-- AJUSTES DE INTEGRIDADE (patrimônio)
+-- ============================================================
+-- transacoes.valor já tinha check (valor >= 0); patrimonio.valor não tinha
+-- o mesmo cuidado — nada impedia gravar um saldo negativo por engano
+-- (dívidas usam tipo='passivo' com valor positivo, não valor negativo).
+-- Corrige qualquer valor negativo existente antes de travar a constraint,
+-- pelo mesmo motivo da limpeza de insights acima: a migração precisa rodar
+-- limpo mesmo num banco que já tem dados.
+update public.patrimonio set valor = abs(valor) where valor < 0;
+
+do $$
+begin
+  alter table public.patrimonio
+    add constraint patrimonio_valor_nao_negativo check (valor >= 0);
+exception
+  when duplicate_object then null;
+end $$;
+
+-- Índice que faltava para o padrão de consulta mais comum da tela de
+-- Patrimônio: buscar o histórico de um ativo específico do usuário.
+create index if not exists patrimonio_user_nome_idx on public.patrimonio (user_id, nome);
+
+-- ============================================================
+-- AJUSTES DE INTEGRIDADE (insights e transferências)
+-- ============================================================
+-- Só o insight mais recente de cada mês é lido (ver app/api/analise);
+-- sem essa restrição, clicar em "Analisar de novo" empilhava um registro
+-- novo por clique, e os antigos ficavam mortos na tabela para sempre.
+--
+-- Quem já usou "Analisar de novo" antes desta migração pode ter mais de
+-- um insight para o mesmo mês — a limpeza abaixo roda sempre (é barata e
+-- idempotente) e garante que a constraint consiga ser criada mesmo num
+-- banco que já tem dados.
+delete from public.insights a
+using public.insights b
+where a.user_id = b.user_id
+  and a.periodo_inicio = b.periodo_inicio
+  and (a.created_at, a.id) < (b.created_at, b.id);
+
+do $$
+begin
+  alter table public.insights
+    add constraint insights_um_por_periodo unique (user_id, periodo_inicio);
+exception
+  when duplicate_object then null;
+end $$;
+
+-- Uma transferência move dinheiro de uma conta para outra; conta_id sozinho
+-- só registrava um dos dois lados. Nome explícito na FK para o PostgREST
+-- conseguir distinguir esta relação da de conta_id ao montar o join.
+alter table public.transacoes
+  add column if not exists conta_destino_id uuid
+  constraint transacoes_conta_destino_id_fkey references public.contas(id) on delete set null;

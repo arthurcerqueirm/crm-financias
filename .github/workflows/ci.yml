@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-e-testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - run: npm ci
+
+      # Roda os testes de unidade (parser de extrato, formatação, agregações)
+      # antes do build — mais rápido de falhar quando alguém quebra a lógica
+      # de leitura de CSV/OFX/PDF.
+      - run: npm test
+
+      # NEXT_PUBLIC_SUPABASE_URL precisa ser uma URL válida para o build
+      # passar (lib/config.ts valida o formato) — o valor não precisa ser
+      # real: nenhuma rota é chamada durante o build, só compilada.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-key

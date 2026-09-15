@@ -43,9 +43,20 @@ export async function categorizarComIA(
   itens: ItemParaCategorizar[],
   categoriasDespesa: string[],
   categoriasReceita: string[],
-): Promise<Map<number, { categoria: string; comerciante: string }>> {
+  /**
+   * Prazo máximo em milissegundos para o total da categorização. O tempo
+   * exato que a Vercel permite por função varia por plano, e estourar o
+   * limite mata a função sem devolver nada — melhor parar sozinho um pouco
+   * antes e devolver o que já deu tempo de categorizar do que arriscar uma
+   * resposta vazia. Itens que não couberem no prazo ficam sem categoria de
+   * IA (a categorização por regra já rodou antes e continua valendo).
+   */
+  orcamentoMs = 45_000,
+): Promise<{ resultados: Map<number, { categoria: string; comerciante: string }>; estourouPrazo: boolean }> {
   const mapa = new Map<number, { categoria: string; comerciante: string }>();
-  if (itens.length === 0) return mapa;
+  if (itens.length === 0) return { resultados: mapa, estourouPrazo: false };
+  const inicio = Date.now();
+  let estourouPrazo = false;
 
   const anthropic = cliente();
   const sistema = [
@@ -108,10 +119,14 @@ export async function categorizarComIA(
   }
 
   for (let i = 0; i < lotes.length; i += CONCORRENCIA) {
+    if (Date.now() - inicio > orcamentoMs) {
+      estourouPrazo = true;
+      break;
+    }
     await Promise.all(lotes.slice(i, i + CONCORRENCIA).map(categorizarLote));
   }
 
-  return mapa;
+  return { resultados: mapa, estourouPrazo };
 }
 
 // ------------------------------------------------------------------

@@ -22,7 +22,10 @@ import {
 } from "@/lib/limiteIA";
 import type { Categoria, LinhaExtrato } from "@/lib/tipos";
 
-export const maxDuration = 300;
+// O teto exato varia por plano da Vercel; 60s é o valor conservador mais
+// comum no Hobby. categorizarComIA() também tem um orçamento de tempo
+// próprio (ver lib/ia.ts) para nunca depender só deste número.
+export const maxDuration = 60;
 
 /** Extratos de banco costumam vir em ISO-8859-1; UTF-8 é o caso feliz. */
 function decodificar(buffer: ArrayBuffer): string {
@@ -198,7 +201,7 @@ export async function POST(request: Request) {
     if (pendentes.length > 0) {
       // Teto por requisição: uma importação de anos de extrato não pode
       // virar uma corrente sem fim de chamadas de IA numa função só.
-      const excedentes = pendentes.length - LIMITE_ITENS_IA_POR_IMPORTACAO;
+      const excedentes = Math.max(0, pendentes.length - LIMITE_ITENS_IA_POR_IMPORTACAO);
       const paraCategorizar = pendentes.slice(0, LIMITE_ITENS_IA_POR_IMPORTACAO);
 
       const usoItens = await registrarUso(supabase, {
@@ -209,7 +212,7 @@ export async function POST(request: Request) {
         avisoIA = usoItens.motivo;
       } else {
         try {
-          const sugestoes = await categorizarComIA(
+          const { resultados: sugestoes, estourouPrazo } = await categorizarComIA(
             paraCategorizar,
             categorias.filter((c) => c.tipo === "despesa").map((c) => c.nome),
             categorias.filter((c) => c.tipo === "receita").map((c) => c.nome),
@@ -227,10 +230,12 @@ export async function POST(request: Request) {
               linha.descricao = sugestao.comerciante.trim();
             }
           }
-          usouIA = true;
+          usouIA = sugestoes.size > 0;
 
-          if (excedentes > 0) {
-            avisoIA = `A IA categorizou as primeiras ${LIMITE_ITENS_IA_POR_IMPORTACAO} transações sem categoria. As outras ${excedentes} ficaram sem categoria — ajuste na mão ou importe em partes menores.`;
+          const faltaram =
+            excedentes + Math.max(0, estourouPrazo ? paraCategorizar.length - sugestoes.size : 0);
+          if (faltaram > 0) {
+            avisoIA = `A IA categorizou ${sugestoes.size} transações. As outras ${faltaram} ficaram sem categoria — ajuste na mão ou importe em partes menores.`;
           }
         } catch (erro) {
           // Categorização é um extra: sem IA o usuário ainda importa e ajusta na mão.

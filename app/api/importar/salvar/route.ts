@@ -2,6 +2,56 @@ import { NextResponse } from "next/server";
 import { createClient, supabaseConfigurado } from "@/lib/supabase/server";
 import type { LinhaExtrato } from "@/lib/tipos";
 
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Confere e normaliza uma linha vinda do cliente antes de gravar.
+ *
+ * Esta rota é um endpoint JSON autenticado comum — nada além do bom senso
+ * do navegador garante que o corpo da requisição é mesmo o que
+ * /api/importar/analisar devolveu. `categoriaIds` e `contaIds` são os
+ * conjuntos que pertencem ao usuário logado; qualquer id fora deles vira
+ * null em vez de ser rejeitado (a linha ainda entra, só sem categoria).
+ */
+function sanearLinha(
+  linha: LinhaExtrato,
+  categoriaIds: Set<string>,
+): { data: string; descricao: string; descricao_original: string | null; valor: number; tipo: "receita" | "despesa"; categoria_id: string | null; categorizado_por: LinhaExtrato["categorizado_por"]; hash_dedup: string } | null {
+  if (typeof linha.data !== "string" || !DATA_ISO.test(linha.data)) return null;
+  if (linha.tipo !== "receita" && linha.tipo !== "despesa") return null;
+
+  const valor = Number(linha.valor);
+  if (!Number.isFinite(valor) || valor <= 0) return null;
+
+  const descricao = String(linha.descricao ?? "").trim().slice(0, 500) || "Sem descrição";
+  const hash = typeof linha.hash_dedup === "string" ? linha.hash_dedup.slice(0, 64) : "";
+  if (!hash) return null;
+
+  const categoriaId =
+    typeof linha.categoria_id === "string" && categoriaIds.has(linha.categoria_id)
+      ? linha.categoria_id
+      : null;
+
+  const categorizadoPor: LinhaExtrato["categorizado_por"] =
+    linha.categorizado_por === "regra" || linha.categorizado_por === "ia"
+      ? linha.categorizado_por
+      : "manual";
+
+  return {
+    data: linha.data,
+    descricao,
+    descricao_original:
+      typeof linha.descricao_original === "string"
+        ? linha.descricao_original.slice(0, 500)
+        : null,
+    valor: Math.round(valor * 100) / 100,
+    tipo: linha.tipo,
+    categoria_id: categoriaId,
+    categorizado_por: categoriaId ? categorizadoPor : "manual",
+    hash_dedup: hash,
+  };
+}
+
 export async function POST(request: Request) {
   if (!supabaseConfigurado()) {
     return NextResponse.json(
@@ -41,10 +91,29 @@ export async function POST(request: Request) {
     );
   }
 
-  const linhas = corpo.linhas.filter((l) => !l.duplicada);
+  const [{ data: categoriasDoUsuario }, { data: contasDoUsuario }] = await Promise.all([
+    supabase.from("categorias").select("id"),
+    supabase.from("contas").select("id"),
+  ]);
+  const categoriaIds = new Set((categoriasDoUsuario ?? []).map((c) => c.id as string));
+  const contaIds = new Set((contasDoUsuario ?? []).map((c) => c.id as string));
+
+  // conta_id vem uma vez só (a mesma conta para o arquivo inteiro) — se não
+  // for uma conta do próprio usuário, a importação segue sem conta, nunca
+  // gravando na conta de outra pessoa.
+  const contaId =
+    typeof corpo.conta_id === "string" && contaIds.has(corpo.conta_id)
+      ? corpo.conta_id
+      : null;
+
+  const linhas = corpo.linhas
+    .filter((l) => !l.duplicada)
+    .map((l) => sanearLinha(l, categoriaIds))
+    .filter((l): l is NonNullable<typeof l> => l !== null);
+
   if (linhas.length === 0) {
     return NextResponse.json(
-      { erro: "Nenhuma transação nova para importar." },
+      { erro: "Nenhuma transação válida para importar." },
       { status: 400 },
     );
   }
@@ -66,8 +135,8 @@ export async function POST(request: Request) {
     .from("importacoes")
     .insert({
       user_id: user.id,
-      arquivo_nome: corpo.arquivo || "extrato",
-      conta_id: corpo.conta_id,
+      arquivo_nome: String(corpo.arquivo || "extrato").slice(0, 255),
+      conta_id: contaId,
       total_linhas: totalLinhas,
       total_importado: 0,
       total_duplicado: totalDuplicadas,
@@ -81,17 +150,10 @@ export async function POST(request: Request) {
 
   const registros = linhas.map((linha) => ({
     user_id: user.id,
-    conta_id: corpo.conta_id,
-    categoria_id: linha.categoria_id,
+    conta_id: contaId,
     importacao_id: importacao.id,
-    data: linha.data,
-    descricao: linha.descricao,
-    descricao_original: linha.descricao_original ?? null,
-    valor: linha.valor,
-    tipo: linha.tipo,
     origem: "importacao" as const,
-    categorizado_por: linha.categorizado_por,
-    hash_dedup: linha.hash_dedup,
+    ...linha,
   }));
 
   // `ignoreDuplicates` protege contra clique duplo no botão de importar.

@@ -6,7 +6,10 @@ import { detectarRecorrentes, porCategoria, somar, evolucaoPatrimonio } from "@/
 import { limitesDoMes, mesAnterior, mesLongo } from "@/lib/formato";
 import type { RegistroPatrimonio, TransacaoComCategoria } from "@/lib/tipos";
 
-export const maxDuration = 300;
+// O teto exato varia por plano da Vercel; 60s é o valor conservador mais
+// comum no Hobby. Uma chamada só de análise costuma terminar bem antes
+// disso mesmo em effort "high".
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   if (!supabaseConfigurado()) {
@@ -114,17 +117,23 @@ export async function POST(request: Request) {
 
     const { data: salvo, error } = await supabase
       .from("insights")
-      .insert({
-        user_id: user.id,
-        periodo_inicio: inicio,
-        periodo_fim: fim,
-        resumo: analise.resumo,
-        dados: {
-          destaques: analise.destaques,
-          alertas: analise.alertas,
-          economias: analise.economias,
+      // Upsert: só existe um insight por usuário/mês (constraint no banco).
+      // "Analisar de novo" substitui o anterior em vez de empilhar registros
+      // que nunca mais seriam lidos.
+      .upsert(
+        {
+          user_id: user.id,
+          periodo_inicio: inicio,
+          periodo_fim: fim,
+          resumo: analise.resumo,
+          dados: {
+            destaques: analise.destaques,
+            alertas: analise.alertas,
+            economias: analise.economias,
+          },
         },
-      })
+        { onConflict: "user_id,periodo_inicio" },
+      )
       .select("*")
       .single();
 
